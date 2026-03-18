@@ -1,2 +1,48 @@
-# CLI client configurations for clink-mcp
-clients: {}
+clients:
+  codex:
+    command: "codex exec"
+    args: ["--json", "--skip-git-repo-check"]
+    models:
+      default: "o3"
+      available: ["o3", "o4-mini", "gpt-5-codex"]
+    sandbox: "read-only"
+    roles:
+      default:
+        prompt_file: "prompts/consult.txt"
+      codereviewer:
+        prompt_file: "prompts/codereview.txt"
+      docgen:
+        prompt_file: "prompts/docgen.txt"
+
+  gemini:
+    command: "gemini"
+    args: ["-p", "--output-format", "json"]
+    models:
+      default: "gemini-2.5-pro"
+      available: ["gemini-2.5-pro", "gemini-2.5-flash"]
+    roles:
+      default:
+        prompt_file: "prompts/consult.txt"
+      trusted:
+        prompt_file: "prompts/consult.txt"
+        args: ["--yolo"]
+      codereviewer:
+        prompt_file: "prompts/codereview.txt"
+      docgen:
+        prompt_file: "prompts/docgen.txt"
+
+  claude:
+    command: "claude"
+    args: ["-p", "--output-format", "json"]
+    models:
+      default: "sonnet"
+      available: ["sonnet", "opus", "haiku"]
+    roles:
+      default:
+        prompt_file: "prompts/consult.txt"
+      codereviewer:
+        prompt_file: "prompts/codereview.txt"
+        args: ["--tools", "Bash,Read,Glob,Grep"]
+      docgen:
+        prompt_file: "prompts/docgen.txt"
+        args: ["--tools", "Read,Glob,Grep"]
