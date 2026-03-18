@@ -48,6 +48,9 @@ def build_command(
 
     full_prompt = _build_prompt(prompt, role_config, file_paths)
 
+    prompt_flag = client.get("prompt_flag")
+    if prompt_flag:
+        return parts + args + [prompt_flag, full_prompt]
     return parts + args + [full_prompt]
 
 
@@ -65,7 +68,7 @@ def _build_prompt(
             system_prompt = resolve_prompt(prompt_file)
             sections.append(system_prompt)
         except FileNotFoundError:
-            pass
+            sections.append(f"[Warning: prompt file '{prompt_file}' not found]")
 
     sections.append(prompt)
 
