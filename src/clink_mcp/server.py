@@ -90,6 +90,7 @@ async def run_cli(cli_name: str, command: list[str], timeout: int = 300) -> str:
     try:
         proc = await asyncio.create_subprocess_exec(
             *command,
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
