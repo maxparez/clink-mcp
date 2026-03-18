@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "clink-mcp"
+version = "0.1.0"
+description = "Lightweight MCP server for CLI-to-CLI bridge"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp>=1.12.0",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+clink-mcp = "clink_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/clink_mcp"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"prompts" = "clink_mcp/prompts"
+"clients.yaml" = "clink_mcp/clients.yaml"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
