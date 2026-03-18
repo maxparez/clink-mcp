@@ -1,10 +1,10 @@
 clients:
   codex:
     command: "codex exec"
-    args: ["--json", "--skip-git-repo-check", "--sandbox", "read-only"]
+    args: ["--json", "--skip-git-repo-check", "--sandbox", "read-only", "-c", "model_reasoning_effort=\"high\""]
     models:
-      default: "o3"
-      available: ["o3", "o4-mini", "gpt-5-codex"]
+      default: "gpt-5.4"
+      available: ["gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.2"]
     roles:
       default:
         prompt_file: "prompts/consult.txt"
@@ -16,10 +16,9 @@ clients:
   gemini:
     command: "gemini"
     args: ["--output-format", "json"]
-    prompt_flag: "-p"
     models:
-      default: "gemini-2.5-pro"
-      available: ["gemini-2.5-pro", "gemini-2.5-flash"]
+      default: "gemini-3.1-pro-preview"
+      available: ["gemini-3.1-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-flash-preview"]
     roles:
       default:
         prompt_file: "prompts/consult.txt"
@@ -33,11 +32,11 @@ clients:
 
   claude:
     command: "claude"
-    args: ["--output-format", "json"]
+    args: ["--output-format", "json", "--effort", "high"]
     prompt_flag: "-p"
     models:
-      default: "sonnet"
-      available: ["sonnet", "opus", "haiku"]
+      default: "opus"
+      available: ["opus", "sonnet", "haiku"]
     roles:
       default:
         prompt_file: "prompts/consult.txt"
