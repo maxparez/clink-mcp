@@ -7,6 +7,7 @@ from clink_mcp.server import (
     merge_args,
     _build_prompt,
     run_cli,
+    clink,
     list_clients,
     _load_clients,
     _clients,
@@ -78,6 +79,25 @@ class TestBuildCommand:
         assert "/tmp/a.py" in prompt_text
         assert "/tmp/b.py" in prompt_text
 
+    def test_context_bundle_manifest_in_prompt(self):
+        client = {
+            "command": "claude",
+            "args": ["--output-format", "json"],
+            "prompt_flag": "-p",
+            "models": {"default": "sonnet"},
+            "roles": {"default": {}},
+        }
+        cmd = build_command(
+            client,
+            "Review this file",
+            role="default",
+            model=None,
+            file_paths=["/tmp/demo.py"],
+            context_mode="paths",
+        )
+        assert cmd[-2] == "-p"
+        assert "Context manifest:" in cmd[-1]
+
     def test_role_args_merged(self):
         client = {
             "command": "claude",
@@ -106,9 +126,30 @@ class TestBuildPrompt:
 
     def test_includes_file_paths(self):
         role_config = {}
-        result = _build_prompt("review", role_config, ["/a.py", "/b.py"])
+        result = _build_prompt(
+            "review",
+            role_config,
+            ["/a.py", "/b.py"],
+            context_mode="paths",
+        )
         assert "/a.py" in result
         assert "/b.py" in result
+        assert "Context manifest:" in result
+
+    def test_appends_embedded_context_bundle(self, tmp_path):
+        source = tmp_path / "demo.py"
+        source.write_text("answer = 42\n")
+        result = _build_prompt(
+            "Explain this module",
+            {},
+            [str(source)],
+            context_mode="embed",
+            max_file_bytes=200,
+            max_total_bytes=500,
+        )
+        assert "Explain this module" in result
+        assert "Context manifest:" in result
+        assert "answer = 42" in result
 
     def test_no_system_prompt_no_files(self):
         result = _build_prompt("just a question", {}, None)
@@ -124,22 +165,50 @@ class TestBuildPrompt:
 
 class TestRunCli:
     def test_missing_executable(self):
-        result = asyncio.get_event_loop().run_until_complete(
-            run_cli("test", ["nonexistent_binary_xyz", "hello"])
-        )
+        result = asyncio.run(run_cli("test", ["nonexistent_binary_xyz", "hello"]))
         assert "[Error]" in result
         assert "not found" in result
 
     def test_successful_execution(self):
-        result = asyncio.get_event_loop().run_until_complete(
-            run_cli("unknown", ["echo", "hello world"])
-        )
+        result = asyncio.run(run_cli("unknown", ["echo", "hello world"]))
         assert "hello world" in result
 
 
 class TestListClients:
     def test_returns_all_clients(self):
-        result = asyncio.get_event_loop().run_until_complete(list_clients())
+        result = asyncio.run(list_clients())
         assert "codex" in result
         assert "gemini" in result
         assert "claude" in result
+
+
+class TestClink:
+    def test_defaults_context_mode_to_auto(self, monkeypatch):
+        captured = {}
+
+        def fake_build_command(
+            client,
+            prompt,
+            role,
+            model,
+            file_paths,
+            context_mode,
+            max_file_bytes,
+            max_total_bytes,
+        ):
+            captured["context_mode"] = context_mode
+            captured["max_file_bytes"] = max_file_bytes
+            captured["max_total_bytes"] = max_total_bytes
+            return ["echo", "ok"]
+
+        async def fake_run_cli(cli_name, command, timeout=300):
+            return "ok"
+
+        monkeypatch.setattr("clink_mcp.server.build_command", fake_build_command)
+        monkeypatch.setattr("clink_mcp.server.run_cli", fake_run_cli)
+
+        asyncio.run(clink("Inspect this", "codex"))
+
+        assert captured["context_mode"] == "auto"
+        assert captured["max_file_bytes"] > 0
+        assert captured["max_total_bytes"] > 0

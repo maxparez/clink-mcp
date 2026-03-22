@@ -7,6 +7,7 @@ import shutil
 from mcp.server.fastmcp import FastMCP
 
 from clink_mcp.config import load_config, resolve_config_path, resolve_prompt
+from clink_mcp.context import build_context_section
 from clink_mcp.parsers import parse_output
 
 mcp = FastMCP("clink-mcp")
@@ -36,6 +37,9 @@ def build_command(
     role: str,
     model: str | None,
     file_paths: list[str] | None,
+    context_mode: str = "auto",
+    max_file_bytes: int = 12_000,
+    max_total_bytes: int = 48_000,
 ) -> list[str]:
     """Build CLI command from client config, role, and prompt."""
     parts = shlex.split(client["command"])
@@ -46,7 +50,14 @@ def build_command(
     if use_model:
         args.extend(["--model", use_model])
 
-    full_prompt = _build_prompt(prompt, role_config, file_paths)
+    full_prompt = _build_prompt(
+        prompt,
+        role_config,
+        file_paths,
+        context_mode=context_mode,
+        max_file_bytes=max_file_bytes,
+        max_total_bytes=max_total_bytes,
+    )
 
     prompt_flag = client.get("prompt_flag")
     if prompt_flag:
@@ -58,6 +69,9 @@ def _build_prompt(
     prompt: str,
     role_config: dict,
     file_paths: list[str] | None,
+    context_mode: str = "auto",
+    max_file_bytes: int = 12_000,
+    max_total_bytes: int = 48_000,
 ) -> str:
     """Compose final prompt from user prompt, role system prompt, and file paths."""
     sections = []
@@ -72,11 +86,14 @@ def _build_prompt(
 
     sections.append(prompt)
 
-    if file_paths:
-        files_section = "Relevant files:\n" + "\n".join(
-            f"- {p}" for p in file_paths
-        )
-        sections.append(files_section)
+    context_section = build_context_section(
+        file_paths,
+        context_mode=context_mode,
+        max_file_bytes=max_file_bytes,
+        max_total_bytes=max_total_bytes,
+    )
+    if context_section:
+        sections.append(context_section)
 
     return "\n\n".join(sections)
 
@@ -113,6 +130,9 @@ async def clink(
     role: str = "default",
     model: str | None = None,
     file_paths: list[str] | None = None,
+    context_mode: str = "auto",
+    max_file_bytes: int = 12_000,
+    max_total_bytes: int = 48_000,
 ) -> str:
     """Send a prompt to an external CLI (codex, gemini, claude) and return the result.
 
@@ -121,7 +141,12 @@ async def clink(
         cli_name: Which CLI to use: codex, gemini, or claude.
         role: Role preset (default, codereviewer, docgen, trusted).
         model: Override the default model for this call.
-        file_paths: Absolute paths to relevant files (included in prompt).
+        file_paths: Absolute paths to relevant files.
+        context_mode: "paths" keeps a manifest only, "embed" inlines readable
+            file contents, and "auto" embeds readable text files while
+            explicitly skipping unreadable ones.
+        max_file_bytes: Per-file byte limit for embedded context.
+        max_total_bytes: Total byte limit for embedded context across files.
     """
     clients = _load_clients()
     cli_name_lower = cli_name.lower()
@@ -131,7 +156,16 @@ async def clink(
         return f"[Error] Unknown CLI '{cli_name}'. Available: {available}"
 
     client = clients[cli_name_lower]
-    command = build_command(client, prompt, role, model, file_paths)
+    command = build_command(
+        client,
+        prompt,
+        role,
+        model,
+        file_paths,
+        context_mode=context_mode,
+        max_file_bytes=max_file_bytes,
+        max_total_bytes=max_total_bytes,
+    )
     return await run_cli(cli_name_lower, command)
 
 

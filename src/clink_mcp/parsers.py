@@ -22,6 +22,15 @@ def parse_codex(stdout: str, stderr: str, exit_code: int) -> str:
             event = json.loads(line)
             if event.get("type") == "message":
                 messages.append(event.get("content", ""))
+                continue
+
+            item = event.get("item")
+            if (
+                event.get("type") == "item.completed"
+                and isinstance(item, dict)
+                and item.get("type") == "agent_message"
+            ):
+                messages.append(item.get("text", ""))
         except json.JSONDecodeError:
             continue
 

@@ -17,6 +17,24 @@ class TestParseCodex:
         result = parse_codex("plain text output", "", 0)
         assert result == "plain text output"
 
+    def test_extracts_agent_message_from_current_jsonl_event_stream(self):
+        lines = [
+            json.dumps({"type": "thread.started", "thread_id": "abc"}),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "item_4",
+                        "type": "agent_message",
+                        "text": "Summary from Codex",
+                    },
+                }
+            ),
+            json.dumps({"type": "turn.completed"}),
+        ]
+        result = parse_codex("\n".join(lines), "", 0)
+        assert result == "Summary from Codex"
+
     def test_error_on_nonzero_exit(self):
         result = parse_codex("", "command not found", 1)
         assert "error" in result.lower()
