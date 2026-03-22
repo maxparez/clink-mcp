@@ -57,6 +57,14 @@ class TestLoadConfig:
         with pytest.raises(ValueError):
             load_config(config_file)
 
+    def test_bundled_claude_uses_stdin_markdown_without_session_persistence(self):
+        config = load_config(resolve_config_path())
+        claude = config["claude"]
+
+        assert claude["prompt_transport"] == "stdin_markdown"
+        assert claude["stdin_prompt_args"] == ["-p"]
+        assert "--no-session-persistence" in claude["args"]
+
 
 class TestResolvePrompt:
     def test_resolves_bundled_prompt(self):

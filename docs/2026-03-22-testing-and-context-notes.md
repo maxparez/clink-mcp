@@ -61,14 +61,20 @@ Important details:
   `max_total_bytes`.
 - Missing files, binary files, and context-limit skips are reported in the
   context manifest rather than silently ignored.
+- The assembled prompt is written to a temporary markdown file for configured
+  clients and then streamed to the downstream CLI via `stdin`.
+- In the current checked implementation this is the default for Codex, Gemini,
+  and Claude.
+- Temporary prompt files are deleted after the CLI call returns.
 - The server does not create a stored context object and does not pass a
   context reference or handle.
-- The final prompt is passed directly to the downstream CLI command.
 - Output is captured from `stdout` and parsed in
   `src/clink_mcp/parsers.py`.
 - For current Codex JSONL output, `clink-mcp` should extract text from both
   legacy `type="message"` events and current `item.completed` events carrying
   `item.type="agent_message"`.
+- When requested, the parsed response can also be persisted to a caller-chosen
+  markdown file via `output_file`.
 
 ## Practical Consequences
 
@@ -77,8 +83,11 @@ Important details:
   exact source text that the downstream model should reason over.
 - Hallucination risk is reduced because the prompt now records which files were
   embedded, truncated, skipped, or missing.
-- Prompt exposure remains an open concern because the assembled context still
-  travels inline through CLI invocation arguments.
+- Prompt exposure is lower than the previous argv-only transport because prompt
+  text is no longer appended directly to the command line for configured
+  clients.
+- Local prompt exposure is not eliminated because temporary files still exist
+  briefly on disk during execution.
 
 ## Why This Matters
 
@@ -94,7 +103,7 @@ The current design is weak for:
 
 - broad repo analysis with no attached context
 - very large context sets that exceed prompt-size limits
-- workflows that need stronger local prompt privacy than inline argv transport
+- workflows that need stronger local prompt privacy than temporary files on disk
 
 ## Verification Notes For Structured Context Bundle
 
@@ -103,7 +112,10 @@ The current design is weak for:
   observable and repeatable.
 - A representative local check is:
   `context_mode="embed"`, `max_file_bytes=4000`, `max_total_bytes=4000` on
-  `src/clink_mcp/server.py`.
+  `src/clink_mcp/server.py`, using file-backed prompt transport.
+- A representative markdown-output check is:
+  set `output_file` to a `.md` path and confirm the parsed final response is
+  written there verbatim.
 - Current Codex verification should confirm that the parsed response is plain
   text, not the raw JSONL event stream.
 - Success criterion for manual verification is that the downstream answer cites
@@ -111,11 +123,9 @@ The current design is weak for:
 
 ## Suggested Next Development Topics
 
-1. Decide whether context transport should stay inline or move to a safer
-   mechanism such as stdin or temp files.
-2. Verify stdin or temp-file prompt transport separately for Codex, Gemini, and
-   Claude before changing the runtime default.
-3. Add selective include options later if the API needs line ranges or explicit
+1. Consider whether prompt temp files should support a caller-selected secure
+   directory or explicit retention for debugging.
+2. Add selective include options later if the API needs line ranges or explicit
    file snippets instead of whole-file embedding.
-4. Consider whether Codex effort should be configurable per call instead of
+3. Consider whether Codex effort should be configurable per call instead of
    fixed in `clients.yaml`.

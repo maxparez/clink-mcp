@@ -2,6 +2,7 @@ clients:
   codex:
     command: "codex exec"
     args: ["--json", "--skip-git-repo-check", "--sandbox", "read-only", "-c", "model_reasoning_effort=\"high\""]
+    prompt_transport: "stdin_markdown"
     models:
       default: "gpt-5.4"
       available: ["gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.2"]
@@ -16,6 +17,8 @@ clients:
   gemini:
     command: "gemini"
     args: ["--output-format", "json"]
+    prompt_transport: "stdin_markdown"
+    stdin_prompt_args: ["-p", ""]
     models:
       default: "gemini-3-flash-preview"
       available:
@@ -38,8 +41,10 @@ clients:
 
   claude:
     command: "claude"
-    args: ["--output-format", "json", "--effort", "high"]
+    args: ["--output-format", "json", "--effort", "high", "--no-session-persistence"]
     prompt_flag: "-p"
+    prompt_transport: "stdin_markdown"
+    stdin_prompt_args: ["-p"]
     models:
       default: "opus"
       available: ["opus", "sonnet", "haiku"]

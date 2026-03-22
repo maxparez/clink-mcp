@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 import pytest
 
@@ -36,12 +37,15 @@ class TestBuildCommand:
             "models": {"default": "o3"},
             "roles": {"default": {"prompt_file": "prompts/consult.txt"}},
         }
-        cmd = build_command(client, "Hello", role="default", model=None, file_paths=None)
+        cmd, stdin_file = build_command(
+            client, "Hello", role="default", model=None, file_paths=None
+        )
         assert cmd[0] == "codex"
         assert cmd[1] == "exec"
         assert "--json" in cmd
         assert "--model" in cmd
         assert "o3" in cmd
+        assert stdin_file is None
         # No prompt_flag, so prompt is last positional arg
         assert cmd[-1].endswith("Hello") or "Hello" in cmd[-1]
 
@@ -53,8 +57,15 @@ class TestBuildCommand:
             "models": {"default": "gemini-2.5-pro"},
             "roles": {"default": {"prompt_file": "prompts/consult.txt"}},
         }
-        cmd = build_command(client, "Hi", role="default", model="gemini-2.5-flash", file_paths=None)
+        cmd, stdin_file = build_command(
+            client,
+            "Hi",
+            role="default",
+            model="gemini-2.5-flash",
+            file_paths=None,
+        )
         assert "gemini-2.5-flash" in cmd
+        assert stdin_file is None
         # Default model should NOT be present
         assert "gemini-2.5-pro" not in cmd
         # prompt_flag: -p should precede the prompt
@@ -68,11 +79,12 @@ class TestBuildCommand:
             "models": {"default": "sonnet"},
             "roles": {"default": {"prompt_file": "prompts/consult.txt"}},
         }
-        cmd = build_command(
+        cmd, stdin_file = build_command(
             client, "Review this",
             role="default", model=None,
             file_paths=["/tmp/a.py", "/tmp/b.py"],
         )
+        assert stdin_file is None
         # With prompt_flag, prompt is last, -p is second-to-last
         assert cmd[-2] == "-p"
         prompt_text = cmd[-1]
@@ -87,7 +99,7 @@ class TestBuildCommand:
             "models": {"default": "sonnet"},
             "roles": {"default": {}},
         }
-        cmd = build_command(
+        cmd, stdin_file = build_command(
             client,
             "Review this file",
             role="default",
@@ -95,8 +107,35 @@ class TestBuildCommand:
             file_paths=["/tmp/demo.py"],
             context_mode="paths",
         )
+        assert stdin_file is None
         assert cmd[-2] == "-p"
         assert "Context manifest:" in cmd[-1]
+
+    def test_stdin_markdown_transport_uses_temp_md_file(self):
+        client = {
+            "command": "codex exec",
+            "args": ["--json"],
+            "prompt_transport": "stdin_markdown",
+            "stdin_prompt_args": [],
+            "models": {"default": "gpt-5.4"},
+            "roles": {"default": {}},
+        }
+        cmd, stdin_file = build_command(
+            client,
+            "Inspect this module",
+            role="default",
+            model=None,
+            file_paths=["/tmp/demo.py"],
+            context_mode="paths",
+        )
+        assert cmd[:2] == ["codex", "exec"]
+        assert stdin_file is not None
+        path = Path(stdin_file)
+        assert path.suffix == ".md"
+        assert path.exists()
+        text = path.read_text()
+        assert "Inspect this module" in text
+        assert "Context manifest:" in text
 
     def test_role_args_merged(self):
         client = {
@@ -111,9 +150,12 @@ class TestBuildCommand:
                 }
             },
         }
-        cmd = build_command(client, "Review", role="codereviewer", model=None, file_paths=None)
+        cmd, stdin_file = build_command(
+            client, "Review", role="codereviewer", model=None, file_paths=None
+        )
         assert "--tools" in cmd
         assert "Bash,Read" in cmd
+        assert stdin_file is None
         assert cmd[-2] == "-p"
 
 
@@ -173,6 +215,12 @@ class TestRunCli:
         result = asyncio.run(run_cli("unknown", ["echo", "hello world"]))
         assert "hello world" in result
 
+    def test_reads_stdin_from_temp_markdown_file(self, tmp_path):
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("hello from markdown file")
+        result = asyncio.run(run_cli("unknown", ["cat"], stdin_file=str(prompt_file)))
+        assert result == "hello from markdown file"
+
 
 class TestListClients:
     def test_returns_all_clients(self):
@@ -199,9 +247,9 @@ class TestClink:
             captured["context_mode"] = context_mode
             captured["max_file_bytes"] = max_file_bytes
             captured["max_total_bytes"] = max_total_bytes
-            return ["echo", "ok"]
+            return ["echo", "ok"], None
 
-        async def fake_run_cli(cli_name, command, timeout=300):
+        async def fake_run_cli(cli_name, command, timeout=300, stdin_file=None):
             return "ok"
 
         monkeypatch.setattr("clink_mcp.server.build_command", fake_build_command)
@@ -212,3 +260,40 @@ class TestClink:
         assert captured["context_mode"] == "auto"
         assert captured["max_file_bytes"] > 0
         assert captured["max_total_bytes"] > 0
+
+    def test_writes_output_markdown_file(self, monkeypatch, tmp_path):
+        output_file = tmp_path / "out" / "response.md"
+
+        def fake_build_command(*args, **kwargs):
+            return ["echo", "ok"], None
+
+        async def fake_run_cli(cli_name, command, timeout=300, stdin_file=None):
+            return "# Result\n\nHello"
+
+        monkeypatch.setattr("clink_mcp.server.build_command", fake_build_command)
+        monkeypatch.setattr("clink_mcp.server.run_cli", fake_run_cli)
+
+        result = asyncio.run(
+            clink("Inspect this", "codex", output_file=str(output_file))
+        )
+
+        assert result == "# Result\n\nHello"
+        assert output_file.read_text() == "# Result\n\nHello"
+
+    def test_cleans_up_temp_prompt_file(self, monkeypatch, tmp_path):
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("temporary prompt")
+
+        def fake_build_command(*args, **kwargs):
+            return ["echo", "ok"], str(prompt_file)
+
+        async def fake_run_cli(cli_name, command, timeout=300, stdin_file=None):
+            assert stdin_file == str(prompt_file)
+            return "ok"
+
+        monkeypatch.setattr("clink_mcp.server.build_command", fake_build_command)
+        monkeypatch.setattr("clink_mcp.server.run_cli", fake_run_cli)
+
+        asyncio.run(clink("Inspect this", "codex"))
+
+        assert not prompt_file.exists()

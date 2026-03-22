@@ -3,12 +3,17 @@
 import asyncio
 import shlex
 import shutil
+from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
 from clink_mcp.config import load_config, resolve_config_path, resolve_prompt
 from clink_mcp.context import build_context_section
 from clink_mcp.parsers import parse_output
+from clink_mcp.transport import (
+    write_markdown_output_file,
+    write_markdown_prompt_file,
+)
 
 mcp = FastMCP("clink-mcp")
 
@@ -40,7 +45,7 @@ def build_command(
     context_mode: str = "auto",
     max_file_bytes: int = 12_000,
     max_total_bytes: int = 48_000,
-) -> list[str]:
+) -> tuple[list[str], str | None]:
     """Build CLI command from client config, role, and prompt."""
     parts = shlex.split(client["command"])
     role_config = client.get("roles", {}).get(role, {})
@@ -59,10 +64,15 @@ def build_command(
         max_total_bytes=max_total_bytes,
     )
 
+    if client.get("prompt_transport") == "stdin_markdown":
+        stdin_file = write_markdown_prompt_file(full_prompt)
+        stdin_args = client.get("stdin_prompt_args", [])
+        return parts + args + list(stdin_args), stdin_file
+
     prompt_flag = client.get("prompt_flag")
     if prompt_flag:
-        return parts + args + [prompt_flag, full_prompt]
-    return parts + args + [full_prompt]
+        return parts + args + [prompt_flag, full_prompt], None
+    return parts + args + [full_prompt], None
 
 
 def _build_prompt(
@@ -98,21 +108,30 @@ def _build_prompt(
     return "\n\n".join(sections)
 
 
-async def run_cli(cli_name: str, command: list[str], timeout: int = 300) -> str:
+async def run_cli(
+    cli_name: str,
+    command: list[str],
+    timeout: int = 300,
+    stdin_file: str | None = None,
+) -> str:
     """Execute CLI command as async subprocess and return parsed output."""
     executable = command[0]
     if not shutil.which(executable):
         return f"[Error] CLI not found: {executable}"
 
     try:
+        stdin_stream = asyncio.subprocess.PIPE if stdin_file else asyncio.subprocess.DEVNULL
         proc = await asyncio.create_subprocess_exec(
             *command,
-            stdin=asyncio.subprocess.DEVNULL,
+            stdin=stdin_stream,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        stdin_bytes = None
+        if stdin_file:
+            stdin_bytes = Path(stdin_file).read_bytes()
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout
+            proc.communicate(stdin_bytes), timeout=timeout
         )
     except asyncio.TimeoutError:
         proc.kill()
@@ -133,6 +152,7 @@ async def clink(
     context_mode: str = "auto",
     max_file_bytes: int = 12_000,
     max_total_bytes: int = 48_000,
+    output_file: str | None = None,
 ) -> str:
     """Send a prompt to an external CLI (codex, gemini, claude) and return the result.
 
@@ -147,6 +167,7 @@ async def clink(
             explicitly skipping unreadable ones.
         max_file_bytes: Per-file byte limit for embedded context.
         max_total_bytes: Total byte limit for embedded context across files.
+        output_file: Optional markdown file path for persisting the parsed result.
     """
     clients = _load_clients()
     cli_name_lower = cli_name.lower()
@@ -156,7 +177,7 @@ async def clink(
         return f"[Error] Unknown CLI '{cli_name}'. Available: {available}"
 
     client = clients[cli_name_lower]
-    command = build_command(
+    command, stdin_file = build_command(
         client,
         prompt,
         role,
@@ -166,7 +187,15 @@ async def clink(
         max_file_bytes=max_file_bytes,
         max_total_bytes=max_total_bytes,
     )
-    return await run_cli(cli_name_lower, command)
+    try:
+        result = await run_cli(cli_name_lower, command, stdin_file=stdin_file)
+    finally:
+        if stdin_file:
+            Path(stdin_file).unlink(missing_ok=True)
+
+    if output_file:
+        write_markdown_output_file(output_file, result)
+    return result
 
 
 @mcp.tool()
