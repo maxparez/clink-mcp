@@ -84,3 +84,33 @@ class TestBuildContextSection:
                 max_file_bytes=200,
                 max_total_bytes=500,
             )
+
+    def test_embed_mode_supports_line_ranges(self, tmp_path: Path):
+        source = tmp_path / "demo.py"
+        source.write_text("a\nb\nc\nd\n")
+
+        result = build_context_section(
+            file_paths=[f"{source}:2-3"],
+            context_mode="embed",
+            max_file_bytes=200,
+            max_total_bytes=500,
+        )
+
+        assert "1 | b" in result
+        assert "2 | c" in result
+        assert "1 | a" not in result
+        assert "3 | d" not in result
+
+    def test_invalid_line_range_is_reported(self, tmp_path: Path):
+        source = tmp_path / "demo.py"
+        source.write_text("a\nb\n")
+
+        result = build_context_section(
+            file_paths=[f"{source}:9-10"],
+            context_mode="embed",
+            max_file_bytes=200,
+            max_total_bytes=500,
+        )
+
+        assert "skipped" in result.lower()
+        assert "range" in result.lower()

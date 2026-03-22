@@ -199,10 +199,8 @@ class TestBuildPrompt:
 
     def test_missing_prompt_file_warning(self):
         role_config = {"prompt_file": "prompts/nonexistent.txt"}
-        result = _build_prompt("my question", role_config, None)
-        assert "[Warning:" in result
-        assert "nonexistent.txt" in result
-        assert "my question" in result
+        with pytest.raises(FileNotFoundError):
+            _build_prompt("my question", role_config, None)
 
 
 class TestRunCli:
@@ -261,6 +259,11 @@ class TestClink:
         assert captured["max_file_bytes"] > 0
         assert captured["max_total_bytes"] > 0
 
+    def test_rejects_unknown_role(self):
+        result = asyncio.run(clink("Review this", "codex", role="does-not-exist"))
+        assert "[Error]" in result
+        assert "Unknown role" in result
+
     def test_writes_output_markdown_file(self, monkeypatch, tmp_path):
         output_file = tmp_path / "out" / "response.md"
 
@@ -279,6 +282,35 @@ class TestClink:
 
         assert result == "# Result\n\nHello"
         assert output_file.read_text() == "# Result\n\nHello"
+
+    def test_rejects_non_markdown_output_file(self, monkeypatch, tmp_path):
+        output_file = tmp_path / "out" / "response.txt"
+
+        def fake_build_command(*args, **kwargs):
+            return ["echo", "ok"], None
+
+        async def fake_run_cli(cli_name, command, timeout=300, stdin_file=None):
+            raise AssertionError("run_cli should not be called for invalid output_file")
+
+        monkeypatch.setattr("clink_mcp.server.build_command", fake_build_command)
+        monkeypatch.setattr("clink_mcp.server.run_cli", fake_run_cli)
+
+        result = asyncio.run(
+            clink("Inspect this", "codex", output_file=str(output_file))
+        )
+
+        assert "[Error]" in result
+        assert ".md" in result
+
+    def test_rejects_non_directory_transport_path(self, monkeypatch, tmp_path):
+        transport_path = tmp_path / "transport.md"
+        transport_path.write_text("not a directory")
+        monkeypatch.setenv("CLINK_TRANSPORT_DIR", str(transport_path))
+
+        result = asyncio.run(clink("Inspect this", "codex"))
+
+        assert "[Error]" in result
+        assert "not a directory" in result.lower()
 
     def test_cleans_up_temp_prompt_file(self, monkeypatch, tmp_path):
         prompt_file = tmp_path / "prompt.md"

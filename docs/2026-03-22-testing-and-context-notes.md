@@ -57,6 +57,8 @@ Important details:
 - `embed` inlines readable file contents with line numbers.
 - `auto` behaves like `embed` for readable UTF-8 text files and explicitly
   reports skipped unreadable or binary entries.
+- `file_paths` can now use `path:start-end` to embed only selected line ranges
+  instead of whole-file content.
 - Embedded context is truncated deterministically by `max_file_bytes` and
   `max_total_bytes`.
 - Missing files, binary files, and context-limit skips are reported in the
@@ -65,6 +67,9 @@ Important details:
   clients and then streamed to the downstream CLI via `stdin`.
 - In the current checked implementation this is the default for Codex, Gemini,
   and Claude.
+- The temp prompt directory can be pinned explicitly with
+  `CLINK_TRANSPORT_DIR` when operators need stronger control over where prompt
+  files land.
 - Temporary prompt files are deleted after the CLI call returns.
 - The server does not create a stored context object and does not pass a
   context reference or handle.
@@ -81,6 +86,8 @@ Important details:
 - Narrow, well-scoped questions still work well.
 - Repo-specific consultations are more reliable when `context_mode` embeds the
   exact source text that the downstream model should reason over.
+- Focused consultations are better served by ranged snippets than by large
+  whole-file embeddings, especially when prompt budget is tight.
 - Hallucination risk is reduced because the prompt now records which files were
   embedded, truncated, skipped, or missing.
 - Prompt exposure is lower than the previous argv-only transport because prompt
@@ -88,6 +95,9 @@ Important details:
   clients.
 - Local prompt exposure is not eliminated because temporary files still exist
   briefly on disk during execution.
+- `CLINK_TRANSPORT_DIR` improves operational control, but it also shifts
+  responsibility to the caller to choose a directory with appropriate local
+  permissions and cleanup policy.
 
 ## Why This Matters
 
@@ -116,6 +126,8 @@ The current design is weak for:
 - A representative markdown-output check is:
   set `output_file` to a `.md` path and confirm the parsed final response is
   written there verbatim.
+- `tests/smoke_test.sh` should exercise Codex, Gemini, and Claude against the
+  same attached local snippet and verify at least one markdown output file write.
 - Current Codex verification should confirm that the parsed response is plain
   text, not the raw JSONL event stream.
 - Success criterion for manual verification is that the downstream answer cites

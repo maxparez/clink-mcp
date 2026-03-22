@@ -11,6 +11,7 @@ from clink_mcp.config import load_config, resolve_config_path, resolve_prompt
 from clink_mcp.context import build_context_section
 from clink_mcp.parsers import parse_output
 from clink_mcp.transport import (
+    validate_markdown_path,
     write_markdown_output_file,
     write_markdown_prompt_file,
 )
@@ -36,6 +37,15 @@ def merge_args(base_args: list, role_args: list | None) -> list:
     return list(base_args) + list(role_args)
 
 
+def _resolve_role_config(client: dict, role: str) -> dict:
+    """Resolve role config and fail fast on invalid role names."""
+    roles = client.get("roles", {})
+    if role not in roles:
+        available = ", ".join(sorted(roles.keys()))
+        raise ValueError(f"Unknown role '{role}'. Available: {available}")
+    return roles[role]
+
+
 def build_command(
     client: dict,
     prompt: str,
@@ -48,7 +58,7 @@ def build_command(
 ) -> tuple[list[str], str | None]:
     """Build CLI command from client config, role, and prompt."""
     parts = shlex.split(client["command"])
-    role_config = client.get("roles", {}).get(role, {})
+    role_config = _resolve_role_config(client, role)
     args = merge_args(client.get("args", []), role_config.get("args"))
 
     use_model = model or client.get("models", {}).get("default")
@@ -88,11 +98,8 @@ def _build_prompt(
 
     prompt_file = role_config.get("prompt_file")
     if prompt_file:
-        try:
-            system_prompt = resolve_prompt(prompt_file)
-            sections.append(system_prompt)
-        except FileNotFoundError:
-            sections.append(f"[Warning: prompt file '{prompt_file}' not found]")
+        system_prompt = resolve_prompt(prompt_file)
+        sections.append(system_prompt)
 
     sections.append(prompt)
 
@@ -161,7 +168,8 @@ async def clink(
         cli_name: Which CLI to use: codex, gemini, or claude.
         role: Role preset (default, codereviewer, docgen, trusted).
         model: Override the default model for this call.
-        file_paths: Absolute paths to relevant files.
+        file_paths: Absolute paths to relevant files. Entries may also use
+            "path:start-end" to embed only a selected line range.
         context_mode: "paths" keeps a manifest only, "embed" inlines readable
             file contents, and "auto" embeds readable text files while
             explicitly skipping unreadable ones.
@@ -176,17 +184,26 @@ async def clink(
         available = ", ".join(clients.keys())
         return f"[Error] Unknown CLI '{cli_name}'. Available: {available}"
 
+    try:
+        if output_file:
+            validate_markdown_path(output_file)
+    except ValueError as exc:
+        return f"[Error] {exc}"
+
     client = clients[cli_name_lower]
-    command, stdin_file = build_command(
-        client,
-        prompt,
-        role,
-        model,
-        file_paths,
-        context_mode=context_mode,
-        max_file_bytes=max_file_bytes,
-        max_total_bytes=max_total_bytes,
-    )
+    try:
+        command, stdin_file = build_command(
+            client,
+            prompt,
+            role,
+            model,
+            file_paths,
+            context_mode=context_mode,
+            max_file_bytes=max_file_bytes,
+            max_total_bytes=max_total_bytes,
+        )
+    except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
+        return f"[Error] {exc}"
     try:
         result = await run_cli(cli_name_lower, command, stdin_file=stdin_file)
     finally:

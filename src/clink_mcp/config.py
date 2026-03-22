@@ -48,6 +48,20 @@ def load_config(config_path: Path) -> dict:
     return clients
 
 
+def resolve_transport_dir() -> Path | None:
+    """Resolve optional temp directory for prompt transport files."""
+    env_path = os.environ.get("CLINK_TRANSPORT_DIR")
+    if not env_path:
+        return None
+
+    path = Path(env_path)
+    if not path.exists():
+        raise FileNotFoundError(f"CLINK_TRANSPORT_DIR not found: {path}")
+    if not path.is_dir():
+        raise NotADirectoryError(f"CLINK_TRANSPORT_DIR is not a directory: {path}")
+    return path
+
+
 def resolve_prompt(prompt_path: str) -> str:
     """Resolve prompt file path and return contents."""
     path = Path(prompt_path)

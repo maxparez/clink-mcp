@@ -1,8 +1,10 @@
 """Context bundle assembly for file-based consultations."""
 
+import re
 from pathlib import Path
 
 _VALID_CONTEXT_MODES = {"auto", "embed", "paths"}
+_LINE_RANGE_PATTERN = re.compile(r"^(?P<path>.+):(?P<start>\d+)-(?P<end>\d+)$")
 
 
 def _validate_context_mode(context_mode: str) -> None:
@@ -38,6 +40,31 @@ def _render_numbered_lines(text: str) -> str:
     )
 
 
+def _parse_file_reference(file_ref: str) -> tuple[Path, tuple[int, int] | None]:
+    match = _LINE_RANGE_PATTERN.match(file_ref)
+    if not match:
+        return Path(file_ref), None
+    path = Path(match.group("path"))
+    start = int(match.group("start"))
+    end = int(match.group("end"))
+    return path, (start, end)
+
+
+def _slice_line_range(text: str, line_range: tuple[int, int]) -> tuple[str | None, str | None]:
+    start, end = line_range
+    if start <= 0 or end < start:
+        return None, "invalid line range"
+
+    lines = text.splitlines()
+    if start > len(lines):
+        return None, "line range outside file"
+
+    sliced = lines[start - 1 : end]
+    if not sliced:
+        return None, "line range outside file"
+    return "\n".join(sliced), None
+
+
 def build_context_section(
     file_paths: list[str] | None,
     context_mode: str,
@@ -55,7 +82,7 @@ def build_context_section(
     total_bytes = 0
 
     for raw_path in file_paths:
-        path = Path(raw_path)
+        path, line_range = _parse_file_reference(raw_path)
         if not path.exists():
             lines.append(f"- {raw_path} [missing]")
             continue
@@ -68,6 +95,12 @@ def build_context_section(
         if error:
             lines.append(f"- {raw_path} [skipped: {error}]")
             continue
+
+        if line_range:
+            text, range_error = _slice_line_range(text, line_range)
+            if range_error:
+                lines.append(f"- {raw_path} [skipped: {range_error}]")
+                continue
 
         truncated_text, file_truncated = _truncate_text(text, max_file_bytes)
         remaining = max_total_bytes - total_bytes

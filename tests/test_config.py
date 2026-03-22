@@ -4,7 +4,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from clink_mcp.config import load_config, resolve_config_path, resolve_prompt
+from clink_mcp.config import (
+    load_config,
+    resolve_config_path,
+    resolve_prompt,
+    resolve_transport_dir,
+)
 
 
 def _write_yaml(path: Path, data: dict) -> None:
@@ -80,3 +85,17 @@ class TestResolvePrompt:
     def test_missing_prompt_raises(self):
         with pytest.raises(FileNotFoundError):
             resolve_prompt("prompts/nonexistent.txt")
+
+
+class TestResolveTransportDir:
+    def test_missing_explicit_transport_dir_raises(self, monkeypatch):
+        monkeypatch.setenv("CLINK_TRANSPORT_DIR", "/tmp/does-not-exist-clink")
+        with pytest.raises(FileNotFoundError):
+            resolve_transport_dir()
+
+    def test_non_directory_transport_dir_raises(self, monkeypatch, tmp_path):
+        path = tmp_path / "file.md"
+        path.write_text("x")
+        monkeypatch.setenv("CLINK_TRANSPORT_DIR", str(path))
+        with pytest.raises(NotADirectoryError):
+            resolve_transport_dir()
