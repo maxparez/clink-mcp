@@ -1,6 +1,7 @@
 """clink-mcp: Lightweight MCP server for CLI-to-CLI bridge."""
 
 import asyncio
+import json
 import logging
 import shlex
 import shutil
@@ -10,7 +11,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from clink_mcp.config import load_config, resolve_config_path, resolve_prompt
-from clink_mcp.context import build_context_section
+from clink_mcp.context import build_context_bundle, build_context_section
 from clink_mcp.parsers import parse_output
 from clink_mcp.transport import (
     validate_markdown_path,
@@ -59,6 +60,7 @@ def build_command(
     context_mode: str = "auto",
     max_file_bytes: int = 12_000,
     max_total_bytes: int = 48_000,
+    extra_args: list[str] | None = None,
 ) -> tuple[list[str], str | None]:
     """Build CLI command from client config, role, and prompt."""
     parts = shlex.split(client["command"])
@@ -68,6 +70,8 @@ def build_command(
     use_model = model or client.get("models", {}).get("default")
     if use_model:
         args.extend(["--model", use_model])
+    if extra_args:
+        args.extend(extra_args)
 
     full_prompt = _build_prompt(
         prompt,
@@ -125,16 +129,61 @@ def _build_prompt(
     return "\n\n".join(sections)
 
 
+def _status_from_text(result_text: str) -> str:
+    if result_text.startswith("[Error]"):
+        return "error"
+    if result_text.startswith("[Fallback]"):
+        return "fallback"
+    return "success"
+
+
+def _build_response(
+    result_text: str,
+    *,
+    cli_name: str,
+    model: str | None,
+    role: str,
+    exit_code: int | None,
+    duration_ms: int | None,
+    context_manifest: list[dict[str, object]] | None,
+) -> dict[str, object]:
+    return {
+        "status": _status_from_text(result_text),
+        "text": result_text,
+        "meta": {
+            "cli": cli_name,
+            "model": model,
+            "role": role,
+            "exit_code": exit_code,
+            "duration_ms": duration_ms,
+            "context_manifest": context_manifest or [],
+        },
+    }
+
+
+def _render_response(response: dict[str, object], response_format: str) -> str:
+    if response_format == "text":
+        return str(response["text"])
+    if response_format == "json":
+        return json.dumps(response, indent=2)
+    raise ValueError("Invalid response_format '"
+                     f"{response_format}'. Use one of: text, json")
+
+
 async def run_cli(
     cli_name: str,
     command: list[str],
     timeout: int = 300,
     stdin_file: str | None = None,
-) -> str:
-    """Execute CLI command as async subprocess and return parsed output."""
+) -> dict[str, object]:
+    """Execute CLI command as async subprocess and return parsed output plus metadata."""
     executable = command[0]
     if not shutil.which(executable):
-        return f"[Error] CLI not found: {executable}"
+        return {
+            "text": f"[Error] CLI not found: {executable}",
+            "exit_code": None,
+            "duration_ms": 0,
+        }
 
     start = time.monotonic()
     communicate_coro = None
@@ -158,7 +207,11 @@ async def run_cli(
         proc.kill()
         await proc.wait()
         logger.warning("CLI %s timed out after %ss", cli_name, timeout)
-        return f"[Error] CLI timed out after {timeout}s"
+        return {
+            "text": f"[Error] CLI timed out after {timeout}s",
+            "exit_code": None,
+            "duration_ms": int((time.monotonic() - start) * 1000),
+        }
 
     stdout = stdout_bytes.decode("utf-8", errors="replace")
     stderr = stderr_bytes.decode("utf-8", errors="replace")
@@ -168,7 +221,11 @@ async def run_cli(
         time.monotonic() - start,
         proc.returncode,
     )
-    return parse_output(cli_name, stdout, stderr, proc.returncode or 0)
+    return {
+        "text": parse_output(cli_name, stdout, stderr, proc.returncode or 0),
+        "exit_code": proc.returncode,
+        "duration_ms": int((time.monotonic() - start) * 1000),
+    }
 
 
 @mcp.tool()
@@ -182,6 +239,8 @@ async def clink(
     max_file_bytes: int = 12_000,
     max_total_bytes: int = 48_000,
     output_file: str | None = None,
+    response_format: str = "text",
+    extra_args: list[str] | None = None,
 ) -> str:
     """Send a prompt to an external CLI (codex, gemini, claude) and return the result.
 
@@ -198,22 +257,57 @@ async def clink(
         max_file_bytes: Per-file byte limit for embedded context.
         max_total_bytes: Total byte limit for embedded context across files.
         output_file: Optional markdown file path for persisting the parsed result.
+        response_format: "text" keeps the legacy string result, while "json"
+            returns a structured envelope as a JSON string.
+        extra_args: Optional raw CLI args appended after configured defaults for
+            per-call overrides such as effort or provider-specific flags.
     """
     clients = _load_clients()
     cli_name_lower = cli_name.lower()
+    if response_format not in {"text", "json"}:
+        return (
+            f"[Error] Invalid response_format '{response_format}'. "
+            "Use one of: text, json"
+        )
 
     if cli_name_lower not in clients:
         available = ", ".join(clients.keys())
-        return f"[Error] Unknown CLI '{cli_name}'. Available: {available}"
+        error_response = _build_response(
+            f"[Error] Unknown CLI '{cli_name}'. Available: {available}",
+            cli_name=cli_name_lower,
+            model=model,
+            role=role,
+            exit_code=None,
+            duration_ms=None,
+            context_manifest=[],
+        )
+        return _render_response(error_response, response_format)
 
     try:
         if output_file:
             validate_markdown_path(output_file)
     except ValueError as exc:
-        return f"[Error] {exc}"
+        error_response = _build_response(
+            f"[Error] {exc}",
+            cli_name=cli_name_lower,
+            model=model,
+            role=role,
+            exit_code=None,
+            duration_ms=None,
+            context_manifest=[],
+        )
+        return _render_response(error_response, response_format)
 
     client = clients[cli_name_lower]
+    use_model = model or client.get("models", {}).get("default")
+    context_manifest: list[dict[str, object]] = []
     try:
+        _context_section, context_manifest = build_context_bundle(
+            file_paths,
+            context_mode=context_mode,
+            max_file_bytes=max_file_bytes,
+            max_total_bytes=max_total_bytes,
+        )
         command, stdin_file = build_command(
             client,
             prompt,
@@ -223,19 +317,39 @@ async def clink(
             context_mode=context_mode,
             max_file_bytes=max_file_bytes,
             max_total_bytes=max_total_bytes,
+            extra_args=extra_args,
         )
     except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
-        return f"[Error] {exc}"
+        error_response = _build_response(
+            f"[Error] {exc}",
+            cli_name=cli_name_lower,
+            model=use_model,
+            role=role,
+            exit_code=None,
+            duration_ms=None,
+            context_manifest=context_manifest,
+        )
+        return _render_response(error_response, response_format)
     try:
-        result = await run_cli(cli_name_lower, command, stdin_file=stdin_file)
+        execution = await run_cli(cli_name_lower, command, stdin_file=stdin_file)
     finally:
         if stdin_file:
             Path(stdin_file).unlink(missing_ok=True)
 
+    response = _build_response(
+        str(execution["text"]),
+        cli_name=cli_name_lower,
+        model=use_model,
+        role=role,
+        exit_code=execution.get("exit_code"),
+        duration_ms=execution.get("duration_ms"),
+        context_manifest=context_manifest,
+    )
+    result = str(response["text"])
     if output_file:
         write_markdown_output_file(output_file, result)
     logger.debug("Completed clink call for cli=%s", cli_name_lower)
-    return result
+    return _render_response(response, response_format)
 
 
 @mcp.tool()

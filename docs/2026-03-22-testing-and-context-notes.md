@@ -85,6 +85,13 @@ Important details:
   through raw output.
 - When requested, the parsed response can also be persisted to a caller-chosen
   markdown file via `output_file`.
+- `clink()` now keeps its legacy text result by default, but it can also return
+  a small JSON string envelope via `response_format="json"`.
+- That JSON envelope is intentionally minimal: `status`, `text`, and `meta`.
+- `meta` currently carries `cli`, `model`, `role`, `exit_code`,
+  `duration_ms`, and `context_manifest`.
+- Per-call provider overrides can now be forwarded through `extra_args`
+  instead of forcing every tuning change into `clients.yaml`.
 
 ## Practical Consequences
 
@@ -108,6 +115,8 @@ Important details:
 - Basic observability is now present through module-level logging in config
   resolution, prompt transport, parser fallback, and CLI execution/timeout
   paths.
+- This keeps `clink-mcp` usable as a thin execution substrate for a future
+  orchestrator without moving retry, scheduling, or routing into the server.
 
 ## Why This Matters
 
@@ -150,6 +159,9 @@ The current design is weak for:
 - Current Codex verification should confirm that the parsed response is plain
   text, not the raw JSONL event stream, unless an explicit `[Fallback]` marker
   is expected.
+- A lightweight orchestrator-readiness check is:
+  `response_format="json"` on one real provider and validation that the
+  returned envelope contains both provider metadata and the context manifest.
 - Success criterion for manual verification is that the downstream answer cites
   details from the embedded file contents rather than responding generically.
 

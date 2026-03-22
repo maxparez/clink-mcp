@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -158,6 +159,24 @@ class TestBuildCommand:
         assert stdin_file is None
         assert cmd[-2] == "-p"
 
+    def test_extra_args_are_appended_after_default_args(self):
+        client = {
+            "command": "codex exec",
+            "args": ["--json", "-c", 'model_reasoning_effort="high"'],
+            "models": {"default": "gpt-5.4"},
+            "roles": {"default": {}},
+        }
+        cmd, stdin_file = build_command(
+            client,
+            "Inspect",
+            role="default",
+            model=None,
+            file_paths=None,
+            extra_args=["-c", 'model_reasoning_effort="xhigh"'],
+        )
+        assert stdin_file is None
+        assert cmd[-3:] == ["-c", 'model_reasoning_effort="xhigh"', "Inspect"]
+
     def test_testgen_role_includes_prompt_and_embedded_context(self, tmp_path):
         source = tmp_path / "bug.py"
         source.write_text("def buggy():\n    return 1\n")
@@ -241,18 +260,21 @@ class TestBuildPrompt:
 class TestRunCli:
     def test_missing_executable(self):
         result = asyncio.run(run_cli("test", ["nonexistent_binary_xyz", "hello"]))
-        assert "[Error]" in result
-        assert "not found" in result
+        assert result["text"].startswith("[Error]")
+        assert "not found" in result["text"]
+        assert result["exit_code"] is None
 
     def test_successful_execution(self):
         result = asyncio.run(run_cli("unknown", ["echo", "hello world"]))
-        assert "hello world" in result
+        assert result["text"] == "hello world"
+        assert result["exit_code"] == 0
 
     def test_reads_stdin_from_temp_markdown_file(self, tmp_path):
         prompt_file = tmp_path / "prompt.md"
         prompt_file.write_text("hello from markdown file")
         result = asyncio.run(run_cli("unknown", ["cat"], stdin_file=str(prompt_file)))
-        assert result == "hello from markdown file"
+        assert result["text"] == "hello from markdown file"
+        assert result["exit_code"] == 0
 
     def test_timeout_kills_and_waits_for_process(self, monkeypatch):
         state = {"killed": False, "waited": False}
@@ -284,8 +306,8 @@ class TestRunCli:
 
         result = asyncio.run(run_cli("codex", ["fake-cli"], timeout=1))
 
-        assert "[Error]" in result
-        assert "timed out" in result
+        assert result["text"].startswith("[Error]")
+        assert "timed out" in result["text"]
         assert state["killed"] is True
         assert state["waited"] is True
 
@@ -311,14 +333,16 @@ class TestClink:
             context_mode,
             max_file_bytes,
             max_total_bytes,
+            extra_args,
         ):
             captured["context_mode"] = context_mode
             captured["max_file_bytes"] = max_file_bytes
             captured["max_total_bytes"] = max_total_bytes
+            captured["extra_args"] = extra_args
             return ["echo", "ok"], None
 
         async def fake_run_cli(cli_name, command, timeout=300, stdin_file=None):
-            return "ok"
+            return {"text": "ok", "exit_code": 0, "duration_ms": 1}
 
         monkeypatch.setattr("clink_mcp.server.build_command", fake_build_command)
         monkeypatch.setattr("clink_mcp.server.run_cli", fake_run_cli)
@@ -328,11 +352,55 @@ class TestClink:
         assert captured["context_mode"] == "auto"
         assert captured["max_file_bytes"] > 0
         assert captured["max_total_bytes"] > 0
+        assert captured["extra_args"] is None
+
+    def test_response_format_json_returns_execution_envelope(self, monkeypatch, tmp_path):
+        source = tmp_path / "demo.py"
+        source.write_text("print('hi')\n")
+
+        def fake_build_command(*args, **kwargs):
+            return ["echo", "ok"], None
+
+        async def fake_run_cli(cli_name, command, timeout=300, stdin_file=None):
+            return {
+                "text": "parsed result",
+                "exit_code": 0,
+                "duration_ms": 12,
+            }
+
+        monkeypatch.setattr("clink_mcp.server.build_command", fake_build_command)
+        monkeypatch.setattr("clink_mcp.server.run_cli", fake_run_cli)
+
+        result = asyncio.run(
+            clink(
+                "Inspect this",
+                "codex",
+                file_paths=[str(source)],
+                response_format="json",
+            )
+        )
+
+        data = json.loads(result)
+        assert data["status"] == "success"
+        assert data["text"] == "parsed result"
+        assert data["meta"]["cli"] == "codex"
+        assert data["meta"]["model"] == "gpt-5.4"
+        assert data["meta"]["role"] == "default"
+        assert data["meta"]["exit_code"] == 0
+        assert data["meta"]["duration_ms"] == 12
+        assert data["meta"]["context_manifest"][0]["status"] == "embedded"
 
     def test_rejects_unknown_role(self):
         result = asyncio.run(clink("Review this", "codex", role="does-not-exist"))
         assert "[Error]" in result
         assert "Unknown role" in result
+
+    def test_rejects_invalid_context_mode(self):
+        result = asyncio.run(
+            clink("Inspect this", "codex", context_mode="bogus")
+        )
+        assert "[Error]" in result
+        assert "Invalid context_mode" in result
 
     def test_writes_output_markdown_file(self, monkeypatch, tmp_path):
         output_file = tmp_path / "out" / "response.md"
@@ -341,7 +409,7 @@ class TestClink:
             return ["echo", "ok"], None
 
         async def fake_run_cli(cli_name, command, timeout=300, stdin_file=None):
-            return "# Result\n\nHello"
+            return {"text": "# Result\n\nHello", "exit_code": 0, "duration_ms": 1}
 
         monkeypatch.setattr("clink_mcp.server.build_command", fake_build_command)
         monkeypatch.setattr("clink_mcp.server.run_cli", fake_run_cli)
@@ -391,7 +459,7 @@ class TestClink:
 
         async def fake_run_cli(cli_name, command, timeout=300, stdin_file=None):
             assert stdin_file == str(prompt_file)
-            return "ok"
+            return {"text": "ok", "exit_code": 0, "duration_ms": 1}
 
         monkeypatch.setattr("clink_mcp.server.build_command", fake_build_command)
         monkeypatch.setattr("clink_mcp.server.run_cli", fake_run_cli)

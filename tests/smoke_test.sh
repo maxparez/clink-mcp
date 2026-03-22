@@ -68,6 +68,7 @@ export OUT_FILE
 export TESTGEN_SOURCE
 "$PYTHON_BIN" - <<'PY'
 import asyncio
+import json
 import os
 from pathlib import Path
 
@@ -107,6 +108,29 @@ async def main():
     if "build_command" not in OUT_FILE.read_text():
         raise AssertionError("codex output_file missing expected content")
     print("OK: codex markdown output file", flush=True)
+
+    codex_json = await asyncio.wait_for(
+        clink(
+            prompt="Name the function build_command if you can see it. Keep the answer short.",
+            cli_name="codex",
+            model="gpt-5.4-mini",
+            file_paths=[TARGET],
+            context_mode="embed",
+            max_file_bytes=2000,
+            max_total_bytes=2000,
+            response_format="json",
+            extra_args=["-c", 'model_reasoning_effort="high"'],
+        ),
+        timeout=90,
+    )
+    codex_envelope = json.loads(codex_json)
+    if codex_envelope["status"] not in {"success", "fallback"}:
+        raise AssertionError(f"unexpected codex json status: {codex_envelope}")
+    if "build_command" not in codex_envelope["text"]:
+        raise AssertionError(f"codex json envelope missing expected text: {codex_envelope}")
+    if codex_envelope["meta"]["cli"] != "codex":
+        raise AssertionError(f"codex json envelope missing cli metadata: {codex_envelope}")
+    print("OK: codex json envelope", flush=True)
 
     await check("gemini", model="gemini-2.5-flash-lite")
     await check("claude", model="haiku")

@@ -127,6 +127,8 @@ You can add new CLIs, change default models, or create custom roles with your ow
 - **Specify `file_paths`** when the subagent needs to see code — the paths are included in the prompt
 - **Use roles** instead of putting instructions in the prompt — they include optimized system prompts
 - **Override models** with the `model` parameter when you need a specific model variant (e.g. `model="haiku"` for fast/cheap Claude responses)
+- **Use `extra_args` sparingly** when an orchestrator needs one-off provider flags without editing `clients.yaml`
+- **Use `response_format="json"`** when a caller needs a structured envelope; keep the default text mode for human-facing consultations
 - **Timeout** is 300s by default — sufficient for most tasks, but complex code reviews may need more
 - **Use `role="testgen"`** when you want a markdown-first candidate test or repro script; keep `file_paths` narrow, use `context_mode="embed"`, and review the output before saving or applying it
 - **Treat `testgen` provider support as staged** — the role is available for all configured clients, but this repo's smoke workflow currently exercises Codex first for reliability
@@ -153,6 +155,27 @@ Send a prompt to an external CLI and return the result.
 | `file_paths` | string[] | no | Absolute paths to include in prompt |
 | `context_mode` | string | no | `auto`, `paths`, or `embed` for file context handling |
 | `output_file` | string | no | Optional `.md` path for saving the parsed response |
+| `response_format` | string | no | `text` for the legacy string result or `json` for a structured envelope |
+| `extra_args` | string[] | no | Raw per-call CLI args appended after configured defaults |
+
+When `response_format="json"`, the tool returns a JSON string with this minimal shape:
+
+```json
+{
+  "status": "success",
+  "text": "parsed response text",
+  "meta": {
+    "cli": "codex",
+    "model": "gpt-5.4",
+    "role": "default",
+    "exit_code": 0,
+    "duration_ms": 1234,
+    "context_manifest": []
+  }
+}
+```
+
+`clink-mcp` still remains a single-call execution layer. Scheduling, retries, routing, and state belong in an orchestrator above it.
 
 ### `list_clients`
 
