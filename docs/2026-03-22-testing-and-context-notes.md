@@ -52,6 +52,9 @@ Implementation reference: `src/clink_mcp/server.py`
 Important details:
 
 - `file_paths` no longer mean path-only by default.
+- `file_paths` is intended to be a real list, but `clink()` now also accepts a
+  comma-separated compatibility string and normalizes it before prompt/context
+  assembly.
 - The tool accepts `context_mode="auto" | "paths" | "embed"`.
 - `paths` adds a manifest only and does not embed file contents.
 - `embed` inlines readable file contents with line numbers.

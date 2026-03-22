@@ -124,7 +124,7 @@ You can add new CLIs, change default models, or create custom roles with your ow
 
 ### Tips
 
-- **Specify `file_paths`** when the subagent needs to see code — the paths are included in the prompt
+- **Specify `file_paths`** when the subagent needs to see code — prefer a real string array, though a comma-separated compatibility string is also accepted
 - **Use roles** instead of putting instructions in the prompt — they include optimized system prompts
 - **Override models** with the `model` parameter when you need a specific model variant (e.g. `model="haiku"` for fast/cheap Claude responses)
 - **Use `extra_args` sparingly** when an orchestrator needs one-off provider flags without editing `clients.yaml`
@@ -152,7 +152,7 @@ Send a prompt to an external CLI and return the result.
 | `cli_name` | string | yes | `codex`, `gemini`, or `claude` |
 | `role` | string | no | Role preset (default: `default`) |
 | `model` | string | no | Override the default model |
-| `file_paths` | string[] | no | Absolute paths to include in prompt |
+| `file_paths` | string[] or string | no | Absolute paths to include in prompt; comma-separated string is accepted for compatibility |
 | `context_mode` | string | no | `auto`, `paths`, or `embed` for file context handling |
 | `output_file` | string | no | Optional `.md` path for saving the parsed response |
 | `response_format` | string | no | `text` for the legacy string result or `json` for a structured envelope |

@@ -390,6 +390,39 @@ class TestClink:
         assert data["meta"]["duration_ms"] == 12
         assert data["meta"]["context_manifest"][0]["status"] == "embedded"
 
+    def test_accepts_comma_separated_file_paths_string(self, monkeypatch):
+        captured = {}
+
+        def fake_build_command(
+            client,
+            prompt,
+            role,
+            model,
+            file_paths,
+            context_mode,
+            max_file_bytes,
+            max_total_bytes,
+            extra_args,
+        ):
+            captured["file_paths"] = file_paths
+            return ["echo", "ok"], None
+
+        async def fake_run_cli(cli_name, command, timeout=300, stdin_file=None):
+            return {"text": "ok", "exit_code": 0, "duration_ms": 1}
+
+        monkeypatch.setattr("clink_mcp.server.build_command", fake_build_command)
+        monkeypatch.setattr("clink_mcp.server.run_cli", fake_run_cli)
+
+        asyncio.run(
+            clink(
+                "Inspect this",
+                "codex",
+                file_paths="/tmp/a.py,/tmp/b.py:1-20",
+            )
+        )
+
+        assert captured["file_paths"] == ["/tmp/a.py", "/tmp/b.py:1-20"]
+
     def test_rejects_unknown_role(self):
         result = asyncio.run(clink("Review this", "codex", role="does-not-exist"))
         assert "[Error]" in result

@@ -42,6 +42,19 @@ def merge_args(base_args: list, role_args: list | None) -> list:
     return list(base_args) + list(role_args)
 
 
+def _normalize_file_paths(
+    file_paths: list[str] | str | None,
+) -> list[str] | None:
+    """Accept either a real list or a comma-separated compatibility string."""
+    if file_paths is None:
+        return None
+    if isinstance(file_paths, str):
+        parts = [part.strip() for part in file_paths.split(",")]
+        normalized = [part for part in parts if part]
+        return normalized or None
+    return file_paths
+
+
 def _resolve_role_config(client: dict, role: str) -> dict:
     """Resolve role config and fail fast on invalid role names."""
     roles = client.get("roles", {})
@@ -234,7 +247,7 @@ async def clink(
     cli_name: str,
     role: str = "default",
     model: str | None = None,
-    file_paths: list[str] | None = None,
+    file_paths: list[str] | str | None = None,
     context_mode: str = "auto",
     max_file_bytes: int = 12_000,
     max_total_bytes: int = 48_000,
@@ -249,8 +262,9 @@ async def clink(
         cli_name: Which CLI to use: codex, gemini, or claude.
         role: Role preset (default, codereviewer, docgen, trusted).
         model: Override the default model for this call.
-        file_paths: Absolute paths to relevant files. Entries may also use
-            "path:start-end" to embed only a selected line range.
+        file_paths: Absolute paths to relevant files. Accepts either a real
+            list or a comma-separated compatibility string. Entries may also
+            use "path:start-end" to embed only a selected line range.
         context_mode: "paths" keeps a manifest only, "embed" inlines readable
             file contents, and "auto" embeds readable text files while
             explicitly skipping unreadable ones.
@@ -264,6 +278,7 @@ async def clink(
     """
     clients = _load_clients()
     cli_name_lower = cli_name.lower()
+    normalized_file_paths = _normalize_file_paths(file_paths)
     if response_format not in {"text", "json"}:
         return (
             f"[Error] Invalid response_format '{response_format}'. "
@@ -303,7 +318,7 @@ async def clink(
     context_manifest: list[dict[str, object]] = []
     try:
         _context_section, context_manifest = build_context_bundle(
-            file_paths,
+            normalized_file_paths,
             context_mode=context_mode,
             max_file_bytes=max_file_bytes,
             max_total_bytes=max_total_bytes,
@@ -313,7 +328,7 @@ async def clink(
             prompt,
             role,
             model,
-            file_paths,
+            normalized_file_paths,
             context_mode=context_mode,
             max_file_bytes=max_file_bytes,
             max_total_bytes=max_total_bytes,
