@@ -138,6 +138,15 @@ The current design is weak for:
   written there verbatim.
 - `tests/smoke_test.sh` should exercise Codex, Gemini, and Claude against the
   same attached local snippet and verify at least one markdown output file write.
+- `tests/smoke_test.sh` now also exercises the `testgen` role against one small
+  Python function using a single fast provider in the first iteration and
+  checks that the response contains one fenced code block, a `<SUMMARY>`
+  section, and the attached function name `add_one`.
+- `testgen` should be treated as a candidate-test workflow: generate markdown
+  first, then let the orchestrator decide whether to save or apply it.
+- For `testgen`, provider reliability may differ by model; the current smoke
+  path uses one fast provider rather than forcing all three through the same
+  workload.
 - Current Codex verification should confirm that the parsed response is plain
   text, not the raw JSONL event stream, unless an explicit `[Fallback]` marker
   is expected.
@@ -152,3 +161,5 @@ The current design is weak for:
    file snippets instead of whole-file embedding.
 3. Consider whether Codex effort should be configurable per call instead of
    fixed in `clients.yaml`.
+4. If `testgen` becomes popular, decide whether the markdown-only output contract
+   needs a more structured artifact format for easier downstream parsing.

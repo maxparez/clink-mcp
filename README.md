@@ -10,14 +10,15 @@ clink-mcp exposes a single MCP tool (`clink`) that sends prompts to external AI 
 
 | CLI | Command | Default Model | Roles |
 |-----|---------|---------------|-------|
-| **Codex** (OpenAI) | `codex exec` | gpt-5.4 | default, codereviewer, docgen |
-| **Gemini** (Google) | `gemini` | gemini-3-flash-preview | default, trusted, codereviewer, docgen |
-| **Claude** (Anthropic) | `claude` | opus | default, codereviewer, docgen |
+| **Codex** (OpenAI) | `codex exec` | gpt-5.4 | default, codereviewer, docgen, testgen |
+| **Gemini** (Google) | `gemini` | gemini-3-flash-preview | default, trusted, codereviewer, docgen, testgen |
+| **Claude** (Anthropic) | `claude` | opus | default, codereviewer, docgen, testgen |
 
 **Roles** are preset system prompts:
 - `default` — consultant (short, actionable answers with summary)
 - `codereviewer` — code review (bugs, security, KISS/DRY violations)
 - `docgen` — documentation generator
+- `testgen` — test generation / repro script generator from narrow local context
 - `trusted` (Gemini only) — consultant with `--yolo` flag (auto-approve actions)
 
 ## Prerequisites
@@ -70,6 +71,17 @@ Claude can now call other AIs as subagents:
 
 "Have Codex generate docs for this module"
 → Claude calls: clink(prompt="Generate docs", cli_name="codex", role="docgen", file_paths=["/path/to/module.py"])
+
+"Generate a minimal regression test for this function"
+→ Claude calls: clink(
+    prompt="Generate one minimal pytest test for this function.",
+    cli_name="claude",
+    role="testgen",
+    model="opus",
+    file_paths=["/path/to/module.py:40-95"],
+    context_mode="embed",
+    output_file="/tmp/testgen.md",
+  )
 ```
 
 ## Configuration in Codex CLI
@@ -108,6 +120,7 @@ You can add new CLIs, change default models, or create custom roles with your ow
 - **Consultation** — ask another model about its strengths (e.g. Codex for OpenAI ecosystem, Gemini for Google APIs)
 - **Documentation** — delegate doc generation to free up the primary agent (`role="docgen"`)
 - **Verification** — cross-check critical decisions with an independent model
+- **Test generation** — generate a candidate regression test or repro script from narrow local context, then review it before applying
 
 ### Tips
 
@@ -115,12 +128,14 @@ You can add new CLIs, change default models, or create custom roles with your ow
 - **Use roles** instead of putting instructions in the prompt — they include optimized system prompts
 - **Override models** with the `model` parameter when you need a specific model variant (e.g. `model="haiku"` for fast/cheap Claude responses)
 - **Timeout** is 300s by default — sufficient for most tasks, but complex code reviews may need more
+- **Use `role="testgen"`** when you want a markdown-first candidate test or repro script; keep `file_paths` narrow, use `context_mode="embed"`, and review the output before saving or applying it
 
 ### What to avoid
 
 - Don't create loops (Claude calling Claude calling Claude)
 - Don't delegate simple tasks — the overhead isn't worth it for one-line answers
 - Don't send sensitive data through CLIs you don't control
+- Don't treat `testgen` output as finished code; it is a candidate artifact that still needs human or orchestrator review
 
 ## MCP Tools
 
@@ -135,6 +150,8 @@ Send a prompt to an external CLI and return the result.
 | `role` | string | no | Role preset (default: `default`) |
 | `model` | string | no | Override the default model |
 | `file_paths` | string[] | no | Absolute paths to include in prompt |
+| `context_mode` | string | no | `auto`, `paths`, or `embed` for file context handling |
+| `output_file` | string | no | Optional `.md` path for saving the parsed response |
 
 ### `list_clients`
 

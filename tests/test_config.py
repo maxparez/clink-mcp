@@ -136,6 +136,21 @@ class TestLoadConfig:
         assert claude["stdin_prompt_args"] == ["-p"]
         assert "--no-session-persistence" in claude["args"]
 
+    def test_bundled_clients_expose_testgen_role(self):
+        config = load_config(resolve_config_path())
+
+        for client_name in ["codex", "gemini", "claude"]:
+            client = config[client_name]
+            assert "testgen" in client["roles"]
+            prompt_file = client["roles"]["testgen"]["prompt_file"]
+            assert prompt_file == "prompts/testgen.txt"
+            prompt_text = resolve_prompt(prompt_file)
+            prompt_lower = prompt_text.lower()
+            assert "test-generation subagent" in prompt_lower
+            assert "one fenced code block" in prompt_lower
+            assert "<summary>" in prompt_lower
+            assert "if context is insufficient, say exactly what is missing instead of guessing." in prompt_lower
+
 
 class TestResolvePrompt:
     def test_resolves_bundled_prompt(self):

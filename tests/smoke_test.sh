@@ -58,7 +58,14 @@ print(f'OK: build_command produces: {\" \".join(cmd[:5])}...')
 
 # Check end-to-end transport for all supported CLIs
 OUT_FILE="$(mktemp /tmp/clink-smoke-XXXX.md)"
+TESTGEN_SOURCE="$(mktemp /tmp/clink-testgen-src-XXXX.py)"
+cat > "$TESTGEN_SOURCE" <<'EOF'
+def add_one(value):
+    return value + 1
+EOF
+trap 'rm -f "$OUT_FILE" "$TESTGEN_SOURCE"' EXIT
 export OUT_FILE
+export TESTGEN_SOURCE
 "$PYTHON_BIN" - <<'PY'
 import asyncio
 import os
@@ -68,6 +75,7 @@ from clink_mcp.server import clink
 
 TARGET = "/home/pavel/vyvoj_sw/clink-mcp/src/clink_mcp/server.py:39-75"
 OUT_FILE = Path(os.environ["OUT_FILE"])
+TESTGEN_SOURCE = Path(os.environ["TESTGEN_SOURCE"])
 
 
 async def check(cli_name: str, *, model: str | None = None, output_file: str | None = None):
@@ -102,6 +110,32 @@ async def main():
 
     await check("gemini", model="gemini-2.5-flash-lite")
     await check("claude", model="haiku")
+
+    testgen_result = await asyncio.wait_for(
+        clink(
+            prompt=(
+                "Generate one minimal pytest test for this function. "
+                "Keep it short and runnable."
+            ),
+            cli_name="codex",
+            role="testgen",
+            model="gpt-5.4-mini",
+            file_paths=[str(TESTGEN_SOURCE)],
+            context_mode="embed",
+            max_file_bytes=2000,
+            max_total_bytes=2000,
+        ),
+        timeout=90,
+    )
+    if not testgen_result.strip():
+        raise AssertionError("testgen returned empty output")
+    if testgen_result.count("```") != 2:
+        raise AssertionError(f"testgen output missing fenced code block: {testgen_result}")
+    if "<SUMMARY>" not in testgen_result:
+        raise AssertionError(f"testgen output missing SUMMARY section: {testgen_result}")
+    if "add_one" not in testgen_result:
+        raise AssertionError(f"testgen output missing source-specific signal: {testgen_result}")
+    print("OK: testgen smoke output", flush=True)
 
 
 asyncio.run(main())

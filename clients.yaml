@@ -13,6 +13,8 @@ clients:
         prompt_file: "prompts/codereview.txt"
       docgen:
         prompt_file: "prompts/docgen.txt"
+      testgen:
+        prompt_file: "prompts/testgen.txt"
 
   gemini:
     command: "gemini"
@@ -38,6 +40,8 @@ clients:
         prompt_file: "prompts/codereview.txt"
       docgen:
         prompt_file: "prompts/docgen.txt"
+      testgen:
+        prompt_file: "prompts/testgen.txt"
 
   claude:
     command: "claude"
@@ -57,3 +61,5 @@ clients:
       docgen:
         prompt_file: "prompts/docgen.txt"
         args: ["--tools", "Read,Glob,Grep"]
+      testgen:
+        prompt_file: "prompts/testgen.txt"

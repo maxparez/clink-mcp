@@ -158,6 +158,41 @@ class TestBuildCommand:
         assert stdin_file is None
         assert cmd[-2] == "-p"
 
+    def test_testgen_role_includes_prompt_and_embedded_context(self, tmp_path):
+        source = tmp_path / "bug.py"
+        source.write_text("def buggy():\n    return 1\n")
+        client = {
+            "command": "claude",
+            "args": ["--output-format", "json", "--effort", "high"],
+            "prompt_transport": "stdin_markdown",
+            "stdin_prompt_args": ["-p"],
+            "models": {"default": "opus"},
+            "roles": {
+                "testgen": {
+                    "prompt_file": "prompts/testgen.txt",
+                }
+            },
+        }
+        cmd, stdin_file = build_command(
+            client,
+            "Generate a regression test for the bug.",
+            role="testgen",
+            model=None,
+            file_paths=[str(source)],
+            context_mode="embed",
+            max_file_bytes=500,
+            max_total_bytes=1000,
+        )
+        assert stdin_file is not None
+        try:
+            prompt_text = Path(stdin_file).read_text()
+            assert "test-generation subagent" in prompt_text.lower()
+            assert "Context manifest:" in prompt_text
+            assert "def buggy():" in prompt_text
+            assert "Generate a regression test for the bug." in prompt_text
+        finally:
+            Path(stdin_file).unlink(missing_ok=True)
+
 
 class TestBuildPrompt:
     def test_includes_system_prompt(self):
