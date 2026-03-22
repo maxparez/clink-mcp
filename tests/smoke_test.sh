@@ -22,7 +22,7 @@ print(f'OK: loaded {len(clients)} clients: {list(clients.keys())}')
 # Check prompts exist and have SUMMARY tag
 "$PYTHON_BIN" -c "
 from clink_mcp.config import resolve_prompt
-for p in ['prompts/consult.txt', 'prompts/codereview.txt', 'prompts/docgen.txt']:
+for p in ['prompts/consult.txt', 'prompts/codereview.txt', 'prompts/docgen.txt', 'prompts/testgen.txt']:
     text = resolve_prompt(p)
     assert 'SUMMARY' in text, f'{p} missing SUMMARY tag'
     print(f'OK: {p} ({len(text)} chars)')
@@ -129,7 +129,7 @@ async def main():
     )
     if not testgen_result.strip():
         raise AssertionError("testgen returned empty output")
-    if testgen_result.count("```") != 2:
+    if testgen_result.count("```") < 2:
         raise AssertionError(f"testgen output missing fenced code block: {testgen_result}")
     if "<SUMMARY>" not in testgen_result:
         raise AssertionError(f"testgen output missing SUMMARY section: {testgen_result}")

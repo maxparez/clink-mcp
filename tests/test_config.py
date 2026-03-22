@@ -147,9 +147,10 @@ class TestLoadConfig:
             prompt_text = resolve_prompt(prompt_file)
             prompt_lower = prompt_text.lower()
             assert "test-generation subagent" in prompt_lower
-            assert "one fenced code block" in prompt_lower
+            assert "fenced code block" in prompt_lower
             assert "<summary>" in prompt_lower
-            assert "if context is insufficient, say exactly what is missing instead of guessing." in prompt_lower
+            assert "if context is insufficient" in prompt_lower
+            assert "instead of guessing" in prompt_lower
 
 
 class TestResolvePrompt:

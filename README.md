@@ -129,6 +129,7 @@ You can add new CLIs, change default models, or create custom roles with your ow
 - **Override models** with the `model` parameter when you need a specific model variant (e.g. `model="haiku"` for fast/cheap Claude responses)
 - **Timeout** is 300s by default — sufficient for most tasks, but complex code reviews may need more
 - **Use `role="testgen"`** when you want a markdown-first candidate test or repro script; keep `file_paths` narrow, use `context_mode="embed"`, and review the output before saving or applying it
+- **Treat `testgen` provider support as staged** — the role is available for all configured clients, but this repo's smoke workflow currently exercises Codex first for reliability
 
 ### What to avoid
 
