@@ -219,6 +219,41 @@ class TestRunCli:
         result = asyncio.run(run_cli("unknown", ["cat"], stdin_file=str(prompt_file)))
         assert result == "hello from markdown file"
 
+    def test_timeout_kills_and_waits_for_process(self, monkeypatch):
+        state = {"killed": False, "waited": False}
+
+        class FakeProc:
+            returncode = None
+
+            async def communicate(self, stdin_bytes):
+                return b"", b""
+
+            def kill(self):
+                state["killed"] = True
+
+            async def wait(self):
+                state["waited"] = True
+
+        async def fake_create_subprocess_exec(*args, **kwargs):
+            return FakeProc()
+
+        async def fake_wait_for(awaitable, timeout):
+            raise asyncio.TimeoutError
+
+        monkeypatch.setattr("clink_mcp.server.shutil.which", lambda executable: "/bin/fake")
+        monkeypatch.setattr(
+            "clink_mcp.server.asyncio.create_subprocess_exec",
+            fake_create_subprocess_exec,
+        )
+        monkeypatch.setattr("clink_mcp.server.asyncio.wait_for", fake_wait_for)
+
+        result = asyncio.run(run_cli("codex", ["fake-cli"], timeout=1))
+
+        assert "[Error]" in result
+        assert "timed out" in result
+        assert state["killed"] is True
+        assert state["waited"] is True
+
 
 class TestListClients:
     def test_returns_all_clients(self):

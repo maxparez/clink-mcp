@@ -1,8 +1,10 @@
 """clink-mcp: Lightweight MCP server for CLI-to-CLI bridge."""
 
 import asyncio
+import logging
 import shlex
 import shutil
+import time
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -17,6 +19,7 @@ from clink_mcp.transport import (
 )
 
 mcp = FastMCP("clink-mcp")
+logger = logging.getLogger(__name__)
 
 _clients: dict = {}
 
@@ -27,6 +30,7 @@ def _load_clients() -> dict:
     if not _clients:
         config_path = resolve_config_path()
         _clients = load_config(config_path)
+        logger.debug("Cached client configuration from %s", config_path)
     return _clients
 
 
@@ -72,6 +76,12 @@ def build_command(
         context_mode=context_mode,
         max_file_bytes=max_file_bytes,
         max_total_bytes=max_total_bytes,
+    )
+    logger.debug(
+        "Built prompt for role=%s transport=%s (%d chars)",
+        role,
+        client.get("prompt_transport", "inline"),
+        len(full_prompt),
     )
 
     if client.get("prompt_transport") == "stdin_markdown":
@@ -126,8 +136,11 @@ async def run_cli(
     if not shutil.which(executable):
         return f"[Error] CLI not found: {executable}"
 
+    start = time.monotonic()
+    communicate_coro = None
     try:
         stdin_stream = asyncio.subprocess.PIPE if stdin_file else asyncio.subprocess.DEVNULL
+        logger.debug("Launching CLI %s with %d args", cli_name, len(command))
         proc = await asyncio.create_subprocess_exec(
             *command,
             stdin=stdin_stream,
@@ -137,15 +150,24 @@ async def run_cli(
         stdin_bytes = None
         if stdin_file:
             stdin_bytes = Path(stdin_file).read_bytes()
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(stdin_bytes), timeout=timeout
-        )
+        communicate_coro = proc.communicate(stdin_bytes)
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(communicate_coro, timeout=timeout)
     except asyncio.TimeoutError:
+        if communicate_coro is not None:
+            communicate_coro.close()
         proc.kill()
+        await proc.wait()
+        logger.warning("CLI %s timed out after %ss", cli_name, timeout)
         return f"[Error] CLI timed out after {timeout}s"
 
     stdout = stdout_bytes.decode("utf-8", errors="replace")
     stderr = stderr_bytes.decode("utf-8", errors="replace")
+    logger.debug(
+        "CLI %s finished in %.2fs with exit_code=%s",
+        cli_name,
+        time.monotonic() - start,
+        proc.returncode,
+    )
     return parse_output(cli_name, stdout, stderr, proc.returncode or 0)
 
 
@@ -212,6 +234,7 @@ async def clink(
 
     if output_file:
         write_markdown_output_file(output_file, result)
+    logger.debug("Completed clink call for cli=%s", cli_name_lower)
     return result
 
 

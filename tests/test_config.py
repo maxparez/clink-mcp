@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+import clink_mcp.config as config_module
 
 from clink_mcp.config import (
     load_config,
@@ -14,6 +15,28 @@ from clink_mcp.config import (
 
 def _write_yaml(path: Path, data: dict) -> None:
     path.write_text(yaml.dump(data))
+
+
+class _FakeTraversable:
+    def __init__(self, mapping: dict[str, str], path: str = ""):
+        self.mapping = mapping
+        self.path = path
+
+    def __truediv__(self, name: str):
+        next_path = f"{self.path}/{name}" if self.path else name
+        return _FakeTraversable(self.mapping, next_path)
+
+    def exists(self):
+        return self.path in self.mapping
+
+    def is_file(self):
+        return self.exists()
+
+    def read_text(self):
+        return self.mapping[self.path]
+
+    def __str__(self):
+        return f"virtual://{self.path}"
 
 
 class TestResolveConfigPath:
@@ -33,6 +56,49 @@ class TestResolveConfigPath:
                 resolve_config_path()
         finally:
             del os.environ["CLIENTS_CONFIG"]
+
+    def test_resolves_bundled_clients_via_importlib_resources(self, monkeypatch, tmp_path):
+        package_root = tmp_path / "package"
+        package_root.mkdir()
+        bundled = package_root / "clients.yaml"
+        bundled.write_text("clients:\n  demo:\n    command: echo\n")
+
+        monkeypatch.delenv("CLIENTS_CONFIG", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.setattr(config_module, "_project_root", lambda: tmp_path / "missing-project")
+        monkeypatch.setattr(config_module, "_package_dir", lambda: tmp_path / "missing-package")
+        monkeypatch.setattr(
+            "importlib.resources.files",
+            lambda package: package_root,
+        )
+
+        assert resolve_config_path() == bundled
+
+    def test_loads_bundled_clients_from_non_path_traversable(self, monkeypatch, tmp_path):
+        fake_root = _FakeTraversable(
+            {
+                "clients.yaml": yaml.dump(
+                    {
+                        "clients": {
+                            "demo": {
+                                "command": "echo",
+                                "models": {"default": "x"},
+                                "roles": {"default": {}},
+                            }
+                        }
+                    }
+                )
+            }
+        )
+
+        monkeypatch.delenv("CLIENTS_CONFIG", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.setattr(config_module, "_project_root", lambda: tmp_path / "missing-project")
+        monkeypatch.setattr(config_module, "_package_dir", lambda: tmp_path / "missing-package")
+        monkeypatch.setattr("importlib.resources.files", lambda package: fake_root)
+
+        config = load_config(resolve_config_path())
+        assert config["demo"]["command"] == "echo"
 
 
 class TestLoadConfig:
@@ -85,6 +151,31 @@ class TestResolvePrompt:
     def test_missing_prompt_raises(self):
         with pytest.raises(FileNotFoundError):
             resolve_prompt("prompts/nonexistent.txt")
+
+    def test_resolves_bundled_prompt_via_importlib_resources(self, monkeypatch, tmp_path):
+        package_root = tmp_path / "package"
+        prompts_dir = package_root / "prompts"
+        prompts_dir.mkdir(parents=True)
+        bundled = prompts_dir / "consult.txt"
+        bundled.write_text("Bundled prompt text")
+
+        monkeypatch.setattr(config_module, "_project_root", lambda: tmp_path / "missing-project")
+        monkeypatch.setattr(config_module, "_package_dir", lambda: tmp_path / "missing-package")
+        monkeypatch.setattr(
+            "importlib.resources.files",
+            lambda package: package_root,
+        )
+
+        assert resolve_prompt("prompts/consult.txt") == "Bundled prompt text"
+
+    def test_resolves_bundled_prompt_from_non_path_traversable(self, monkeypatch, tmp_path):
+        fake_root = _FakeTraversable({"prompts/consult.txt": "Virtual bundled prompt"})
+
+        monkeypatch.setattr(config_module, "_project_root", lambda: tmp_path / "missing-project")
+        monkeypatch.setattr(config_module, "_package_dir", lambda: tmp_path / "missing-package")
+        monkeypatch.setattr("importlib.resources.files", lambda package: fake_root)
+
+        assert resolve_prompt("prompts/consult.txt") == "Virtual bundled prompt"
 
 
 class TestResolveTransportDir:

@@ -5,10 +5,45 @@ Falls back to raw text on parse failure.
 """
 
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _error_message(stderr: str, exit_code: int) -> str:
     return f"[Error] CLI exited with code {exit_code}.\n{stderr}".strip()
+
+
+def _fallback_raw_text(cli_name: str, stdout: str) -> str:
+    raw = stdout.strip()
+    logger.warning(
+        "Parser fallback triggered for %s; returning raw output (%d chars)",
+        cli_name,
+        len(raw),
+    )
+    if not raw:
+        return f"[Fallback] {cli_name} parser could not extract structured output."
+    return (
+        f"[Fallback] {cli_name} parser could not extract structured output.\n\n{raw}"
+    )
+
+
+def _coerce_text_field(
+    cli_name: str,
+    data: dict,
+    field_names: tuple[str, ...],
+    stdout: str,
+) -> str:
+    for field_name in field_names:
+        if field_name not in data:
+            continue
+        value = data[field_name]
+        if isinstance(value, str):
+            return value
+        if value is None:
+            return _fallback_raw_text(cli_name, stdout)
+        return json.dumps(value)
+    return json.dumps(data)
 
 
 def parse_codex(stdout: str, stderr: str, exit_code: int) -> str:
@@ -34,7 +69,7 @@ def parse_codex(stdout: str, stderr: str, exit_code: int) -> str:
         except json.JSONDecodeError:
             continue
 
-    return "\n".join(messages) if messages else stdout.strip()
+    return "\n".join(messages) if messages else _fallback_raw_text("codex", stdout)
 
 
 def parse_gemini(stdout: str, stderr: str, exit_code: int) -> str:
@@ -45,11 +80,11 @@ def parse_gemini(stdout: str, stderr: str, exit_code: int) -> str:
     try:
         data = json.loads(stdout)
         if isinstance(data, dict):
-            return data.get("response", data.get("text", json.dumps(data)))
+            return _coerce_text_field("gemini", data, ("response", "text"), stdout)
     except json.JSONDecodeError:
         pass
 
-    return stdout.strip()
+    return _fallback_raw_text("gemini", stdout)
 
 
 def parse_claude(stdout: str, stderr: str, exit_code: int) -> str:
@@ -60,11 +95,11 @@ def parse_claude(stdout: str, stderr: str, exit_code: int) -> str:
     try:
         data = json.loads(stdout)
         if isinstance(data, dict):
-            return data.get("result", data.get("content", json.dumps(data)))
+            return _coerce_text_field("claude", data, ("result", "content"), stdout)
     except json.JSONDecodeError:
         pass
 
-    return stdout.strip()
+    return _fallback_raw_text("claude", stdout)
 
 
 _PARSERS = {

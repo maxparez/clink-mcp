@@ -73,11 +73,16 @@ Important details:
 - Temporary prompt files are deleted after the CLI call returns.
 - The server does not create a stored context object and does not pass a
   context reference or handle.
+- Bundled `clients.yaml` and prompt templates are now resolved through
+  `importlib.resources` instead of relying only on repo-root path guessing.
 - Output is captured from `stdout` and parsed in
   `src/clink_mcp/parsers.py`.
 - For current Codex JSONL output, `clink-mcp` should extract text from both
   legacy `type="message"` events and current `item.completed` events carrying
   `item.type="agent_message"`.
+- If a known CLI parser cannot extract structured output, the returned text is
+  now explicitly marked with a `[Fallback]` prefix instead of silently passing
+  through raw output.
 - When requested, the parsed response can also be persisted to a caller-chosen
   markdown file via `output_file`.
 
@@ -90,6 +95,8 @@ Important details:
   whole-file embeddings, especially when prompt budget is tight.
 - Hallucination risk is reduced because the prompt now records which files were
   embedded, truncated, skipped, or missing.
+- Parser degradation is easier to notice because raw fallback is explicitly
+  marked and warning-logged.
 - Prompt exposure is lower than the previous argv-only transport because prompt
   text is no longer appended directly to the command line for configured
   clients.
@@ -98,6 +105,9 @@ Important details:
 - `CLINK_TRANSPORT_DIR` improves operational control, but it also shifts
   responsibility to the caller to choose a directory with appropriate local
   permissions and cleanup policy.
+- Basic observability is now present through module-level logging in config
+  resolution, prompt transport, parser fallback, and CLI execution/timeout
+  paths.
 
 ## Why This Matters
 
@@ -129,7 +139,8 @@ The current design is weak for:
 - `tests/smoke_test.sh` should exercise Codex, Gemini, and Claude against the
   same attached local snippet and verify at least one markdown output file write.
 - Current Codex verification should confirm that the parsed response is plain
-  text, not the raw JSONL event stream.
+  text, not the raw JSONL event stream, unless an explicit `[Fallback]` marker
+  is expected.
 - Success criterion for manual verification is that the downstream answer cites
   details from the embedded file contents rather than responding generically.
 

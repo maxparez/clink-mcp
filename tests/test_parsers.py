@@ -1,4 +1,5 @@
 import json
+import logging
 
 from clink_mcp.parsers import parse_codex, parse_gemini, parse_claude, parse_output
 
@@ -15,7 +16,8 @@ class TestParseCodex:
 
     def test_fallback_on_invalid_json(self):
         result = parse_codex("plain text output", "", 0)
-        assert result == "plain text output"
+        assert result.startswith("[Fallback]")
+        assert "plain text output" in result
 
     def test_extracts_agent_message_from_current_jsonl_event_stream(self):
         lines = [
@@ -49,11 +51,24 @@ class TestParseGemini:
 
     def test_fallback_on_plain_text(self):
         result = parse_gemini("just text", "", 0)
-        assert result == "just text"
+        assert result.startswith("[Fallback]")
+        assert "just text" in result
 
     def test_error_on_nonzero_exit(self):
         result = parse_gemini("", "auth failed", 1)
         assert "error" in result.lower()
+
+    def test_logs_when_falling_back_to_raw_text(self, caplog):
+        with caplog.at_level(logging.WARNING):
+            result = parse_gemini("just text", "", 0)
+
+        assert result.startswith("[Fallback]")
+        assert "fallback" in caplog.text.lower()
+
+    def test_nullable_response_field_keeps_string_contract(self):
+        result = parse_gemini(json.dumps({"response": None}), "", 0)
+        assert isinstance(result, str)
+        assert result.startswith("[Fallback]")
 
 
 class TestParseClaude:
@@ -65,7 +80,13 @@ class TestParseClaude:
 
     def test_fallback_on_plain_text(self):
         result = parse_claude("raw output", "", 0)
-        assert result == "raw output"
+        assert result.startswith("[Fallback]")
+        assert "raw output" in result
+
+    def test_nullable_result_field_keeps_string_contract(self):
+        result = parse_claude(json.dumps({"result": None}), "", 0)
+        assert isinstance(result, str)
+        assert result.startswith("[Fallback]")
 
 
 class TestParseOutput:
