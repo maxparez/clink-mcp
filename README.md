@@ -152,6 +152,7 @@ Practical rule:
 - Keep the request roughly to 1-3 files and a short prompt
 - Avoid heavy multi-file review, large embedded context, or long-running agentic tasks from stock Codex
 - For bigger review jobs, use `clink-cli` from the terminal or a host you control
+- If you want Codex to route between these two paths consistently, use the shared `clink-routing` skill from `https://github.com/maxparez/codex-skills`
 
 ### Direct Terminal Wrapper
 
@@ -177,6 +178,27 @@ Use `clink-cli` when:
 - the stock Codex host would likely time out
 - you want the same request shape as the MCP tool
 - you need a longer terminal-side wait for the downstream CLI
+
+### Shared Codex Skill
+
+The `clink-routing` skill now lives in the separate shared repo:
+
+- `https://github.com/maxparez/codex-skills`
+
+It exists to keep host-specific routing behavior out of `clink-mcp` itself.
+The intended workflow is:
+
+- keep `clink-mcp` as the execution layer
+- use `clink-routing` in Codex when the task may exceed the stock MCP host timeout
+- let the skill choose between MCP `clink` and terminal `clink-cli`
+
+Recommended local install pattern:
+
+```bash
+mkdir -p ~/.local/bin ~/.codex/skills
+ln -sfn /path/to/clink-mcp/venv/bin/clink-cli ~/.local/bin/clink-cli
+ln -sfn /path/to/codex-skills/skills/clink-routing ~/.codex/skills/clink-routing
+```
 
 ## MCP Tools
 

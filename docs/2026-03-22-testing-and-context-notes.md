@@ -162,6 +162,20 @@ The current design is weak for:
 The current design is also usable for:
 
 - direct terminal execution via `clink-cli` when the host timeout is the real bottleneck
+- Codex-side routing through the shared `clink-routing` skill when you want the host to pick MCP vs direct wrapper without moving that logic into `clink-mcp`
+
+## Shared Skill Note
+
+The host-specific routing guidance now lives outside this repo in:
+
+- `https://github.com/maxparez/codex-skills`
+
+That repo currently contains the `clink-routing` skill. The design intent is:
+
+- keep `clink-mcp` focused on one execution request
+- keep Codex host timeout workarounds in a skill layer above it
+- avoid duplicating `clients.yaml` or prompt assembly logic in the skill
+- route heavy Codex tasks to `clink-cli` instead of forcing them through the stock MCP timeout ceiling
 
 ## Verification Notes For Structured Context Bundle
 
