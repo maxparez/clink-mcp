@@ -53,6 +53,9 @@ installed from commit `2958e5e7dfb66ef70aaed75cbda0ba1e200b92b6`.
   more agentic tasks hit the ceiling regardless of the downstream model.
 - The practical workflow consequence is that stock Codex should be treated as a
   host for short, bounded `clink` calls, not long-running review or orchestration.
+- The intended escape hatch is a direct terminal wrapper, `clink-cli`, which
+  reuses the same `clink-mcp` runtime logic but is not subject to the stock
+  Codex MCP tool-call ceiling.
 
 ## How Context Is Passed Today
 
@@ -156,6 +159,10 @@ The current design is weak for:
 - workflows that need stronger local prompt privacy than temporary files on disk
 - long-running `clink` calls from the stock Codex host
 
+The current design is also usable for:
+
+- direct terminal execution via `clink-cli` when the host timeout is the real bottleneck
+
 ## Verification Notes For Structured Context Bundle
 
 - Unit verification should cover both manifest-only and embedded-content modes.
@@ -184,6 +191,10 @@ The current design is weak for:
 - A lightweight orchestrator-readiness check is:
   `response_format="json"` on one real provider and validation that the
   returned envelope contains both provider metadata and the context manifest.
+- A workflow escape-hatch check is:
+  `clink-cli --tool-args-json ... --timeout 900` on one real provider and
+  confirmation that the direct wrapper returns parsed output through the same
+  runtime path as `clink()`.
 - Success criterion for manual verification is that the downstream answer cites
   details from the embedded file contents rather than responding generically.
 

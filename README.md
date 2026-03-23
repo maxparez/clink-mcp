@@ -151,7 +151,32 @@ Practical rule:
 - Use Codex-hosted `clink` for quick consultations and narrow reviews
 - Keep the request roughly to 1-3 files and a short prompt
 - Avoid heavy multi-file review, large embedded context, or long-running agentic tasks from stock Codex
-- For bigger review jobs, run the downstream CLI directly or use a host you control
+- For bigger review jobs, use `clink-cli` from the terminal or a host you control
+
+### Direct Terminal Wrapper
+
+`clink-cli` is a thin direct wrapper over the same `clink-mcp` runtime logic. It reuses `clients.yaml`, prompt assembly, context handling, transport, and output parsing, but it is not constrained by the stock Codex MCP tool timeout.
+
+Typical pattern:
+
+```bash
+clink-cli \
+  --tool-args-json '{
+    "prompt": "Review this docs-only change before merge. Focus on concrete problems only.",
+    "cli_name": "claude",
+    "role": "codereviewer",
+    "model": "sonnet",
+    "file_paths": ["/abs/path/STATE.md", "/abs/path/CLAUDE.md"],
+    "context_mode": "embed"
+  }' \
+  --timeout 900
+```
+
+Use `clink-cli` when:
+
+- the stock Codex host would likely time out
+- you want the same request shape as the MCP tool
+- you need a longer terminal-side wait for the downstream CLI
 
 ## MCP Tools
 

@@ -9,6 +9,7 @@ from clink_mcp.server import (
     merge_args,
     _build_prompt,
     run_cli,
+    execute_clink_call,
     clink,
     list_clients,
     _load_clients,
@@ -321,6 +322,30 @@ class TestListClients:
 
 
 class TestClink:
+    def test_execute_clink_call_forwards_timeout_override(self, monkeypatch):
+        captured = {}
+
+        def fake_build_command(*args, **kwargs):
+            return ["echo", "ok"], None
+
+        async def fake_run_cli(cli_name, command, timeout=300, stdin_file=None):
+            captured["timeout"] = timeout
+            return {"text": "ok", "exit_code": 0, "duration_ms": 1}
+
+        monkeypatch.setattr("clink_mcp.server.build_command", fake_build_command)
+        monkeypatch.setattr("clink_mcp.server.run_cli", fake_run_cli)
+
+        result = asyncio.run(
+            execute_clink_call(
+                prompt="Inspect this",
+                cli_name="codex",
+                timeout=900,
+            )
+        )
+
+        assert result == "ok"
+        assert captured["timeout"] == 900
+
     def test_defaults_context_mode_to_auto(self, monkeypatch):
         captured = {}
 

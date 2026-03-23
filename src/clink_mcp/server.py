@@ -241,8 +241,7 @@ async def run_cli(
     }
 
 
-@mcp.tool()
-async def clink(
+async def execute_clink_call(
     prompt: str,
     cli_name: str,
     role: str = "default",
@@ -254,28 +253,9 @@ async def clink(
     output_file: str | None = None,
     response_format: str = "text",
     extra_args: list[str] | None = None,
+    timeout: int = 300,
 ) -> str:
-    """Send a prompt to an external CLI (codex, gemini, claude) and return the result.
-
-    Args:
-        prompt: The request to send to the CLI.
-        cli_name: Which CLI to use: codex, gemini, or claude.
-        role: Role preset (default, codereviewer, docgen, trusted).
-        model: Override the default model for this call.
-        file_paths: Absolute paths to relevant files. Accepts either a real
-            list or a comma-separated compatibility string. Entries may also
-            use "path:start-end" to embed only a selected line range.
-        context_mode: "paths" keeps a manifest only, "embed" inlines readable
-            file contents, and "auto" embeds readable text files while
-            explicitly skipping unreadable ones.
-        max_file_bytes: Per-file byte limit for embedded context.
-        max_total_bytes: Total byte limit for embedded context across files.
-        output_file: Optional markdown file path for persisting the parsed result.
-        response_format: "text" keeps the legacy string result, while "json"
-            returns a structured envelope as a JSON string.
-        extra_args: Optional raw CLI args appended after configured defaults for
-            per-call overrides such as effort or provider-specific flags.
-    """
+    """Execute one clink request without going through MCP schema validation."""
     clients = _load_clients()
     cli_name_lower = cli_name.lower()
     normalized_file_paths = _normalize_file_paths(file_paths)
@@ -346,7 +326,12 @@ async def clink(
         )
         return _render_response(error_response, response_format)
     try:
-        execution = await run_cli(cli_name_lower, command, stdin_file=stdin_file)
+        execution = await run_cli(
+            cli_name_lower,
+            command,
+            timeout=timeout,
+            stdin_file=stdin_file,
+        )
     finally:
         if stdin_file:
             Path(stdin_file).unlink(missing_ok=True)
@@ -365,6 +350,56 @@ async def clink(
         write_markdown_output_file(output_file, result)
     logger.debug("Completed clink call for cli=%s", cli_name_lower)
     return _render_response(response, response_format)
+
+
+@mcp.tool()
+async def clink(
+    prompt: str,
+    cli_name: str,
+    role: str = "default",
+    model: str | None = None,
+    file_paths: list[str] | str | None = None,
+    context_mode: str = "auto",
+    max_file_bytes: int = 12_000,
+    max_total_bytes: int = 48_000,
+    output_file: str | None = None,
+    response_format: str = "text",
+    extra_args: list[str] | None = None,
+) -> str:
+    """Send a prompt to an external CLI (codex, gemini, claude) and return the result.
+
+    Args:
+        prompt: The request to send to the CLI.
+        cli_name: Which CLI to use: codex, gemini, or claude.
+        role: Role preset (default, codereviewer, docgen, trusted).
+        model: Override the default model for this call.
+        file_paths: Absolute paths to relevant files. Accepts either a real
+            list or a comma-separated compatibility string. Entries may also
+            use "path:start-end" to embed only a selected line range.
+        context_mode: "paths" keeps a manifest only, "embed" inlines readable
+            file contents, and "auto" embeds readable text files while
+            explicitly skipping unreadable ones.
+        max_file_bytes: Per-file byte limit for embedded context.
+        max_total_bytes: Total byte limit for embedded context across files.
+        output_file: Optional markdown file path for persisting the parsed result.
+        response_format: "text" keeps the legacy string result, while "json"
+            returns a structured envelope as a JSON string.
+        extra_args: Optional raw CLI args appended after configured defaults for
+            per-call overrides such as effort or provider-specific flags.
+    """
+    return await execute_clink_call(
+        prompt=prompt,
+        cli_name=cli_name,
+        role=role,
+        model=model,
+        file_paths=file_paths,
+        context_mode=context_mode,
+        max_file_bytes=max_file_bytes,
+        max_total_bytes=max_total_bytes,
+        output_file=output_file,
+        response_format=response_format,
+        extra_args=extra_args,
+    )
 
 
 @mcp.tool()

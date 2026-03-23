@@ -14,6 +14,7 @@ dependencies = [
 
 [project.scripts]
 clink-mcp = "clink_mcp.server:main"
+clink-cli = "clink_mcp.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/clink_mcp"]
