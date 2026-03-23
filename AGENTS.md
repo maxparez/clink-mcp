@@ -44,6 +44,8 @@ Read these files before making changes:
 - Today, `clink-mcp` builds one prompt string from role prompt content, user prompt, and optional `file_paths`.
 - That prompt is passed directly to downstream CLIs, rather than through a stored context object or file reference abstraction.
 - Any change in this area should be tested against correctness, hallucination risk, and local prompt exposure.
+- Separately from `clink-mcp` itself, stock Codex host usage appears to impose an outer MCP tool-call timeout around 120 seconds.
+- Treat that host-side ceiling as a workflow constraint: do not assume a long-running downstream CLI call can complete just because `clink-mcp` allows a longer internal timeout.
 
 ## Workflow Expectations
 
@@ -51,3 +53,4 @@ Read these files before making changes:
 - Update docs when runtime behavior changes.
 - Run the relevant verification before claiming success.
 - For prompt transport or parsing changes, verify at least one real end-to-end CLI call in addition to unit tests.
+- For workflow guidance, distinguish clearly between `clink-mcp` runtime behavior and host-specific limits such as stock Codex MCP timeout ceilings.

@@ -130,6 +130,7 @@ You can add new CLIs, change default models, or create custom roles with your ow
 - **Use `extra_args` sparingly** when an orchestrator needs one-off provider flags without editing `clients.yaml`
 - **Use `response_format="json"`** when a caller needs a structured envelope; keep the default text mode for human-facing consultations
 - **Timeout** is 300s by default — sufficient for most tasks, but complex code reviews may need more
+- **Stock Codex host has a practical MCP call ceiling around 120s** — keep Codex-initiated `clink` calls small and bounded, even though `clink-mcp` itself waits longer internally
 - **Use `role="testgen"`** when you want a markdown-first candidate test or repro script; keep `file_paths` narrow, use `context_mode="embed"`, and review the output before saving or applying it
 - **Treat `testgen` provider support as staged** — the role is available for all configured clients, but this repo's smoke workflow currently exercises Codex first for reliability
 
@@ -137,8 +138,20 @@ You can add new CLIs, change default models, or create custom roles with your ow
 
 - Don't create loops (Claude calling Claude calling Claude)
 - Don't delegate simple tasks — the overhead isn't worth it for one-line answers
+- Don't use stock Codex-hosted MCP calls for long multi-file review or heavy agentic work; split the task or run the downstream CLI directly
 - Don't send sensitive data through CLIs you don't control
 - Don't treat `testgen` output as finished code; it is a candidate artifact that still needs human or orchestrator review
+
+### Stock Codex Limitation
+
+When `clink-mcp` is called from the stock Codex host, the host appears to enforce an MCP tool-call timeout around 120 seconds. `clink-mcp` itself allows longer downstream CLI waits, but the outer host can still terminate the tool call first.
+
+Practical rule:
+
+- Use Codex-hosted `clink` for quick consultations and narrow reviews
+- Keep the request roughly to 1-3 files and a short prompt
+- Avoid heavy multi-file review, large embedded context, or long-running agentic tasks from stock Codex
+- For bigger review jobs, run the downstream CLI directly or use a host you control
 
 ## MCP Tools
 

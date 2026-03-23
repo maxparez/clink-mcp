@@ -39,6 +39,21 @@ installed from commit `2958e5e7dfb66ef70aaed75cbda0ba1e200b92b6`.
 - Because of that, `xhigh` is verified for direct `codex exec`, but not through
   the current `clink-mcp` abstraction.
 
+## Stock Codex Host Limitation
+
+- A recurring real-world issue is host-side timeout around 120 seconds when
+  `clink-mcp` is invoked from the stock Codex host.
+- The visible error shape is host-side, for example:
+  `timed out awaiting tools/call after 120s`.
+- This is distinct from `clink-mcp`'s own internal downstream CLI timeout,
+  which is currently 300 seconds in `src/clink_mcp/server.py`.
+- In practice that means the outer Codex host can terminate the MCP tool call
+  before `clink-mcp` reaches its own timeout handling.
+- The effect appears to be workload-shaped rather than model-shaped: larger or
+  more agentic tasks hit the ceiling regardless of the downstream model.
+- The practical workflow consequence is that stock Codex should be treated as a
+  host for short, bounded `clink` calls, not long-running review or orchestration.
+
 ## How Context Is Passed Today
 
 Implementation reference: `src/clink_mcp/server.py`
@@ -120,6 +135,8 @@ Important details:
   paths.
 - This keeps `clink-mcp` usable as a thin execution substrate for a future
   orchestrator without moving retry, scheduling, or routing into the server.
+- In stock Codex specifically, that future orchestrator role is constrained by
+  the host's own MCP call timeout, so large single-call workflows are a poor fit.
 
 ## Why This Matters
 
@@ -130,12 +147,14 @@ The current design is usable for:
 - bounded consultations
 - model-to-model comparison
 - targeted local-code analysis when relevant files are embedded
+- quick bounded `clink` calls from stock Codex
 
 The current design is weak for:
 
 - broad repo analysis with no attached context
 - very large context sets that exceed prompt-size limits
 - workflows that need stronger local prompt privacy than temporary files on disk
+- long-running `clink` calls from the stock Codex host
 
 ## Verification Notes For Structured Context Bundle
 
